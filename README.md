@@ -11,7 +11,11 @@ An ad-free, Apple TV-style home screen for Amazon Fire TV (Fire OS devices).
 
 ## Install
 
-Download the APK from Releases and sideload it (Downloader or Send Files to TV).
+Download [`apk/LumenHome-latest.apk`](apk/LumenHome-latest.apk) and sideload it. On the Fire TV, the Downloader app can fetch it directly from:
+
+```
+https://github.com/Droidkay/lumen-home-firestick/raw/main/apk/LumenHome-latest.apk
+```
 
 ### Make the Home button open Lumen (one time)
 

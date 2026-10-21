@@ -3,3 +3,4 @@ build/
 *.zip
 keystore/
 preview_*.png
+!apk/*.apk
