@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lumen Home</string>
+    <string name="service_name">Lumen Home button</string>
+    <string name="service_desc">Opens Lumen Home whenever the Fire TV home screen appears, so the Home button and start-up take you to Lumen instead of Amazon\'s home screen. It only watches for the Amazon home screen and reads nothing else.</string>
+</resources>

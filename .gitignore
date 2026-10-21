@@ -1,0 +1,5 @@
+build/
+*.apk
+*.zip
+keystore/
+preview_*.png
