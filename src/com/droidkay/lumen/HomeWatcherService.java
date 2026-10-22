@@ -12,6 +12,30 @@ import android.view.accessibility.AccessibilityEvent;
  */
 public class HomeWatcherService extends AccessibilityService {
     private long lastLaunch;
+    private static HomeWatcherService instance;
+
+    @Override
+    protected void onServiceConnected() {
+        super.onServiceConnected();
+        instance = this;
+    }
+
+    @Override
+    public boolean onUnbind(android.content.Intent intent) {
+        instance = null;
+        return super.onUnbind(intent);
+    }
+
+    /** Puts the TV to sleep (Fire OS 7+), using the Home-button service. Returns false if unavailable. */
+    static boolean sleep() {
+        HomeWatcherService s = instance;
+        if (s == null || android.os.Build.VERSION.SDK_INT < 28) return false;
+        try {
+            return s.performGlobalAction(8 /* GLOBAL_ACTION_LOCK_SCREEN */);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent e) {

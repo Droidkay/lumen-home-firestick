@@ -10,7 +10,7 @@ import android.view.View;
 /** Line icons drawn in code, so they look the same on every Fire OS version. */
 final class IconView extends View {
     static final int SETTINGS = 0, HOME = 1, SLIDERS = 2, SUN = 3, MOON = 4, PARTLY = 5, CLOUD = 6,
-            RAIN = 7, STORM = 8, FOG = 9, WIFI = 10, WIFI_OFF = 11, DISK = 12;
+            RAIN = 7, STORM = 8, FOG = 9, WIFI = 10, WIFI_OFF = 11, DISK = 12, BLUETOOTH = 13, RECENT = 14, POWER = 15;
 
     private int type;
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -164,6 +164,27 @@ final class IconView extends View {
                 p.setStyle(Paint.Style.FILL);
                 c.drawCircle(cx + s * 0.20f, cy + s * 0.16f, s * 0.035f, p);
                 p.setStyle(Paint.Style.STROKE);
+                break;
+            case BLUETOOTH:
+                path.reset();
+                path.moveTo(cx - s * 0.24f, cy - s * 0.20f);
+                path.lineTo(cx + s * 0.22f, cy + s * 0.20f);
+                path.lineTo(cx, cy + s * 0.42f);
+                path.lineTo(cx, cy - s * 0.42f);
+                path.lineTo(cx + s * 0.22f, cy - s * 0.20f);
+                path.lineTo(cx - s * 0.24f, cy + s * 0.20f);
+                c.drawPath(path, p);
+                break;
+            case RECENT:
+                rf.set(cx - s * 0.20f, cy - s * 0.30f, cx + s * 0.36f, cy + s * 0.18f);
+                c.drawRoundRect(rf, s * 0.06f, s * 0.06f, p);
+                c.drawLine(cx - s * 0.36f, cy - s * 0.12f, cx - s * 0.36f, cy + s * 0.34f, p);
+                c.drawLine(cx - s * 0.36f, cy + s * 0.34f, cx + s * 0.18f, cy + s * 0.34f, p);
+                break;
+            case POWER:
+                rf.set(cx - s * 0.32f, cy - s * 0.30f, cx + s * 0.32f, cy + s * 0.34f);
+                c.drawArc(rf, -60, 300, false, p);
+                c.drawLine(cx, cy - s * 0.42f, cx, cy - s * 0.04f, p);
                 break;
             default:
                 break;

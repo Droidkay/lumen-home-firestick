@@ -64,6 +64,11 @@ public class MainActivity extends Activity {
     private WidgetBar widgets;
     private FrameLayout overlay;
     private boolean overlayShown;
+    private boolean switcherShown;
+    private StatusPill pill;
+    private LinearLayout switcherRow;
+    private TextView ramText;
+    private View ramFill;
     private View focusBeforeOverlay;
     private Bitmap blurred;
 
@@ -88,6 +93,7 @@ public class MainActivity extends Activity {
         public void onReceive(Context c, Intent i) {
             updateClock();
             if (widgets != null) widgets.refresh(MainActivity.this);
+            if (pill != null) pill.refresh(MainActivity.this);
             maybeRefreshWeather(false);
         }
     };
@@ -186,6 +192,13 @@ public class MainActivity extends Activity {
             else if (k == KeyEvent.KEYCODE_DPAD_UP) { AppTile.lastDx = 0; AppTile.lastDy = -1; }
             else if (k == KeyEvent.KEYCODE_DPAD_DOWN) { AppTile.lastDx = 0; AppTile.lastDy = 1; }
         }
+        if (switcherShown && k == KeyEvent.KEYCODE_DPAD_UP) {
+            View f = getCurrentFocus();
+            if (f instanceof AppTile) {
+                if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) closeRecent((AppTile) f);
+                return true;
+            }
+        }
         if (k == KeyEvent.KEYCODE_BACK || k == KeyEvent.KEYCODE_ESCAPE) {
             if (up) {
                 if (overlayShown) hidePanel(true);
@@ -200,7 +213,7 @@ public class MainActivity extends Activity {
                 } else {
                     View f = getCurrentFocus();
                     if (f instanceof AppTile) showAppOptions((AppTile) f, null);
-                    else showCustomise(0);
+                    else showControlCenter();
                 }
             }
             return true;
@@ -284,22 +297,15 @@ public class MainActivity extends Activity {
         dateTv.setShadowLayer(dp(6), 0, 0, 0x80000000);
         h.addView(dateTv, new LinearLayout.LayoutParams(0, WRAP, 1f));
 
-        View home = chip(IconView.HOME, "Fire TV Home", new Runnable() {
+        pill = new StatusPill(this);
+        pill.build(Prefs.getInt(this, "pill", StatusPill.FULL));
+        pill.setOnClickListener(new View.OnClickListener() {
             @Override
-            public void run() {
-                openAmazonHome();
+            public void onClick(View v) {
+                showControlCenter();
             }
         });
-        h.addView(home, new LinearLayout.LayoutParams(WRAP, WRAP));
-        View cust = chip(IconView.SLIDERS, "Customise", new Runnable() {
-            @Override
-            public void run() {
-                showCustomise(0);
-            }
-        });
-        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(WRAP, WRAP);
-        cp.leftMargin = dp(10);
-        h.addView(cust, cp);
+        h.addView(pill, new LinearLayout.LayoutParams(WRAP, WRAP));
         return h;
     }
 
@@ -440,6 +446,7 @@ public class MainActivity extends Activity {
                         if (destroyed) return;
                         Weather.Now show = now != null ? now : Weather.cached(MainActivity.this);
                         widgets.setWeather(show, MainActivity.this);
+                        pill.refresh(MainActivity.this);
                     }
                 });
             }
@@ -602,8 +609,9 @@ public class MainActivity extends Activity {
         List<String> hidden = Prefs.list(this, Prefs.HIDDEN);
         List<AppRepo.App> favs = pick(Prefs.list(this, Prefs.FAVS), map, hidden, 999);
         List<AppRepo.App> recents = pick(Prefs.list(this, Prefs.RECENTS), map, hidden, 8);
+        HashMap<String, String> inFolder = Folders.owners(this);
         ArrayList<AppRepo.App> all = new ArrayList<AppRepo.App>();
-        for (AppRepo.App a : apps) if (!hidden.contains(a.pkg)) all.add(a);
+        for (AppRepo.App a : apps) if (!hidden.contains(a.pkg) && !inFolder.containsKey(a.pkg)) all.add(a);
 
         sections.removeAllViews();
 
@@ -641,6 +649,15 @@ public class MainActivity extends Activity {
             sections.addView(sectionTitle("Recently used"), titleLp());
             sections.addView(row(recents, SEC_RECENT, gw, gh, gap, always), rowLp());
         }
+
+        // folders first, drawn as 2 x 2 previews
+        ArrayList<AppRepo.App> folderTiles = new ArrayList<AppRepo.App>();
+        for (java.util.Map.Entry<String, List<String>> fe : Folders.load(this).entrySet()) {
+            List<AppRepo.App> members = pick(fe.getValue(), map, new ArrayList<String>(), 999);
+            if (members.isEmpty()) continue;
+            folderTiles.add(Folders.tile(this, fe.getKey(), members, gw, gh));
+        }
+        all.addAll(0, folderTiles);
 
         sections.addView(sectionTitle("All apps"), titleLp());
         sections.addView(grid(all, cols, gw, gh, gap, always), new LinearLayout.LayoutParams(MATCH, WRAP));
@@ -748,6 +765,7 @@ public class MainActivity extends Activity {
         t.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                if (overlayShown && !Folders.isFolder(t.app)) hidePanel(false);
                 launch(t.app, t.section);
             }
         });
@@ -794,6 +812,10 @@ public class MainActivity extends Activity {
     }
 
     private void launch(AppRepo.App a, String section) {
+        if (Folders.isFolder(a)) {
+            openFolder(Folders.nameOf(a));
+            return;
+        }
         PackageManager pm = getPackageManager();
         Intent i = null;
         try {
@@ -906,6 +928,7 @@ public class MainActivity extends Activity {
     private void showPanel(Drawable icon, String title, String subtitle, String message,
                            final List<Opt> opts, int focusIndex, int widthDp) {
         if (!overlayShown) focusBeforeOverlay = getCurrentFocus();
+        switcherShown = false;
         overlay.removeAllViews();
 
         if (blurred != null && !blurred.isRecycled()) {
@@ -1042,6 +1065,7 @@ public class MainActivity extends Activity {
     private void hidePanel(boolean restoreFocus) {
         if (!overlayShown) return;
         overlayShown = false;
+        switcherShown = false;
         overlay.setVisibility(View.GONE);
         overlay.removeAllViews();
         scroll.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
@@ -1056,6 +1080,10 @@ public class MainActivity extends Activity {
     private void showAppOptions(final AppTile tile, String focusLabel) {
         final AppRepo.App a = tile.app;
         final String sec = tile.section;
+        if (Folders.isFolder(a)) {
+            showFolderOptions(Folders.nameOf(a));
+            return;
+        }
         ArrayList<Opt> opts = new ArrayList<Opt>();
 
         opts.add(new Opt("Open", new Runnable() {
@@ -1117,6 +1145,25 @@ public class MainActivity extends Activity {
                     r.remove(a.pkg);
                     Prefs.putList(MainActivity.this, Prefs.RECENTS, r);
                     render(SEC_RECENT, null);
+                }
+            }));
+        }
+
+        final String owner = Folders.owners(this).get(a.pkg);
+        if (owner != null) {
+            opts.add(new Opt("Remove from “" + owner + "”", new Runnable() {
+                @Override
+                public void run() {
+                    Folders.remove(MainActivity.this, a.pkg);
+                    render(SEC_ALL, a.pkg);
+                    toast(a.label + " moved out of " + owner);
+                }
+            }));
+        } else {
+            opts.add(new Opt("Add to folder…", new Runnable() {
+                @Override
+                public void run() {
+                    chooseFolder(a);
                 }
             }));
         }
@@ -1194,6 +1241,528 @@ public class MainActivity extends Activity {
         }
     }
 
+    // ---------------------------------------------------------------- custom overlays
+
+    /** Clears the overlay and lays the frosted, blurred wallpaper behind it. */
+    private void beginOverlay(int tint) {
+        if (!overlayShown) focusBeforeOverlay = getCurrentFocus();
+        overlay.removeAllViews();
+        switcherShown = false;
+        if (blurred != null && !blurred.isRecycled()) {
+            ImageView bl = new ImageView(this);
+            bl.setScaleType(ImageView.ScaleType.FIT_XY);
+            bl.setImageBitmap(blurred);
+            overlay.addView(bl, new FrameLayout.LayoutParams(MATCH, MATCH));
+            View t = new View(this);
+            t.setBackgroundColor(tint);
+            overlay.addView(t, new FrameLayout.LayoutParams(MATCH, MATCH));
+        } else {
+            View scrim = new View(this);
+            scrim.setBackgroundColor(0xC705060B);
+            overlay.addView(scrim, new FrameLayout.LayoutParams(MATCH, MATCH));
+        }
+    }
+
+    private void endOverlay(View panel, FrameLayout.LayoutParams lp, final View focus) {
+        overlay.addView(panel, lp);
+        scroll.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        boolean wasShown = overlayShown;
+        overlay.setVisibility(View.VISIBLE);
+        overlayShown = true;
+        if (!wasShown) {
+            overlay.setAlpha(0f);
+            overlay.animate().alpha(1f).setDuration(180).start();
+        }
+        panel.setAlpha(0f);
+        panel.setScaleX(0.94f);
+        panel.setScaleY(0.94f);
+        panel.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220)
+                .setInterpolator(new DecelerateInterpolator()).start();
+        if (focus != null) {
+            focus.requestFocus();
+            ui.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (overlayShown && focus.isAttachedToWindow()) focus.requestFocus();
+                }
+            });
+        }
+    }
+
+    private TextView titlePill(String s) {
+        TextView t = text(s, 14, 0xFF0B0C10, "sans-serif-medium");
+        t.setPadding(dp(16), dp(7), dp(16), dp(7));
+        t.setBackground(rounded(0xF2FFFFFF, 16));
+        return t;
+    }
+
+    // ---------------------------------------------------------------- folders
+
+    private void openFolder(final String name) {
+        List<String> pkgs = Folders.load(this).get(name);
+        if (pkgs == null) return;
+        List<AppRepo.App> members = pick(pkgs, appMap(), new ArrayList<String>(), 999);
+        if (members.isEmpty()) return;
+
+        beginOverlay(0x4005060B);
+        int screenW = getResources().getDisplayMetrics().widthPixels;
+        int panelW = (int) Math.min(screenW * 0.62f, dp(720));
+        int pad = dp(28), gap = dp(20), cols = 4;
+        int tw = (panelW - 2 * pad - (cols - 1) * gap) / cols, th = tw * 9 / 16;
+
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.setGravity(Gravity.CENTER_HORIZONTAL);
+        wrap.setClipChildren(false);
+        wrap.addView(titlePill(name));
+
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(pad, dp(26), pad, dp(14));
+        panel.setClipChildren(false);
+        panel.setClipToPadding(false);
+        Glass.apply(panel, dp(34), density, 0x4DFFFFFF);
+        LinearLayout rowL = null;
+        AppTile first = null;
+        for (int i = 0; i < members.size(); i++) {
+            if (i % cols == 0) {
+                rowL = new LinearLayout(this);
+                rowL.setOrientation(LinearLayout.HORIZONTAL);
+                rowL.setClipChildren(false);
+                rowL.setClipToPadding(false);
+                LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(MATCH, WRAP);
+                rl.bottomMargin = dp(8);
+                panel.addView(rowL, rl);
+            }
+            AppTile t = new AppTile(this, members.get(i), Folders.PREFIX + name, tw, th, Prefs.alwaysLabels(this));
+            wire(t);
+            if (first == null) first = t;
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(WRAP, WRAP);
+            if (i % cols > 0) lp.leftMargin = gap;
+            rowL.addView(t, lp);
+        }
+        View body = panel;
+        if (members.size() > cols * 3) {
+            ScrollView sv = new ScrollView(this);
+            sv.setVerticalScrollBarEnabled(false);
+            sv.setClipChildren(false);
+            sv.addView(panel);
+            body = sv;
+        }
+        LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(panelW, WRAP);
+        pl.topMargin = dp(16);
+        wrap.addView(body, pl);
+        endOverlay(wrap, new FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER), first);
+    }
+
+    private void showFolderOptions(final String name) {
+        ArrayList<Opt> opts = new ArrayList<Opt>();
+        opts.add(new Opt("Open", new Runnable() {
+            @Override
+            public void run() {
+                openFolder(name);
+            }
+        }));
+        opts.add(new Opt("Rename…", new Runnable() {
+            @Override
+            public void run() {
+                askFolderName("Rename folder", name, new FolderNamed() {
+                    @Override
+                    public void named(String n) {
+                        Folders.rename(MainActivity.this, name, n);
+                        render(SEC_ALL, Folders.PREFIX + Folders.clean(n));
+                    }
+                });
+            }
+        }));
+        opts.add(new Opt("Remove folder (keeps the apps)", new Runnable() {
+            @Override
+            public void run() {
+                Folders.delete(MainActivity.this, name);
+                render(SEC_ALL, null);
+                toast("Folder removed. Its apps are back in All apps.");
+            }
+        }));
+        opts.add(new Opt("Cancel", null));
+        showPanel(null, name, "Folder", null, opts, 0, 440);
+    }
+
+    private interface FolderNamed {
+        void named(String name);
+    }
+
+    private void chooseFolder(final AppRepo.App a) {
+        ArrayList<Opt> opts = new ArrayList<Opt>();
+        java.util.Set<String> existing = Folders.load(this).keySet();
+        for (final String f : existing) {
+            opts.add(new Opt(f, new Runnable() {
+                @Override
+                public void run() {
+                    Folders.add(MainActivity.this, f, a.pkg);
+                    render(SEC_ALL, Folders.PREFIX + f);
+                    toast(a.label + " added to " + f);
+                }
+            }));
+        }
+        for (final String f : Folders.SUGGESTED) {
+            if (existing.contains(f)) continue;
+            opts.add(new Opt("New: " + f, new Runnable() {
+                @Override
+                public void run() {
+                    Folders.add(MainActivity.this, f, a.pkg);
+                    render(SEC_ALL, Folders.PREFIX + f);
+                    toast("Made “" + f + "” with " + a.label);
+                }
+            }));
+        }
+        opts.add(new Opt("New folder with my own name…", new Runnable() {
+            @Override
+            public void run() {
+                askFolderName("New folder", "", new FolderNamed() {
+                    @Override
+                    public void named(String n) {
+                        Folders.add(MainActivity.this, n, a.pkg);
+                        render(SEC_ALL, Folders.PREFIX + Folders.clean(n));
+                    }
+                });
+            }
+        }));
+        opts.add(new Opt("Cancel", null));
+        showPanel(a.icon, "Add to folder", a.label, null, opts, 0, 460);
+    }
+
+    private void askFolderName(String title, String current, final FolderNamed done) {
+        final android.widget.EditText e = new android.widget.EditText(this);
+        e.setSingleLine(true);
+        e.setText(current);
+        e.setSelectAllOnFocus(true);
+        FrameLayout box = new FrameLayout(this);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        box.addView(e);
+        new android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle(title).setView(box)
+                .setPositiveButton("Save", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface d, int w) {
+                        String n = Folders.clean(e.getText().toString());
+                        if (!n.isEmpty()) done.named(n);
+                    }
+                })
+                .setNegativeButton("Cancel", null).show();
+    }
+
+    // ---------------------------------------------------------------- control center
+
+    private View ccTile(int icon, String label, String sub, final Runnable action) {
+        return ccTile(icon, label, sub, false, action);
+    }
+
+    /** keepOverlay: the action opens another overlay, so don't close this one first (keeps focus memory). */
+    private View ccTile(int icon, String label, String sub, final boolean keepOverlay, final Runnable action) {
+        final LinearLayout t = new LinearLayout(this);
+        t.setOrientation(LinearLayout.VERTICAL);
+        t.setGravity(Gravity.CENTER_HORIZONTAL);
+        t.setFocusable(true);
+        t.setClickable(true);
+        t.setPadding(dp(6), dp(10), dp(6), dp(10));
+        t.setBackground(pressable(0x00000000, 0x26FFFFFF, 20));
+        final FrameLayout circle = new FrameLayout(this);
+        circle.setBackground(oval(0x33FFFFFF));
+        final IconView iv = new IconView(this, icon, dp(2f));
+        iv.setColor(0xFFFFFFFF);
+        circle.addView(iv, new FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER));
+        t.addView(circle, new LinearLayout.LayoutParams(dp(58), dp(58)));
+        TextView l = text(label, 13, 0xF2FFFFFF, "sans-serif-medium");
+        LinearLayout.LayoutParams ll = new LinearLayout.LayoutParams(WRAP, WRAP);
+        ll.topMargin = dp(10);
+        t.addView(l, ll);
+        if (sub != null) {
+            TextView st = text(sub, 11, 0x99FFFFFF, "sans-serif");
+            LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(WRAP, WRAP);
+            sl.topMargin = dp(4);
+            t.addView(st, sl);
+        }
+        t.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View v, boolean f) {
+                circle.setBackground(oval(f ? 0xFFFFFFFF : 0x33FFFFFF));
+                iv.setColor(f ? 0xFF0B0C10 : 0xFFFFFFFF);
+                circle.animate().scaleX(f ? 1.1f : 1f).scaleY(f ? 1.1f : 1f).setDuration(150).start();
+            }
+        });
+        t.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!keepOverlay) hidePanel(true);
+                action.run();
+            }
+        });
+        return t;
+    }
+
+    private GradientDrawable oval(int color) {
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(color);
+        return g;
+    }
+
+    private boolean online() {
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            android.net.NetworkInfo ni = cm == null ? null : cm.getActiveNetworkInfo();
+            return ni != null && ni.isConnected();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private boolean bluetoothOn() {
+        try {
+            android.bluetooth.BluetoothAdapter a = android.bluetooth.BluetoothAdapter.getDefaultAdapter();
+            return a != null && a.isEnabled();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private void openSystemPage(String action) {
+        Prefs.setStr(this, "settingsOpenedAt", String.valueOf(System.currentTimeMillis()));
+        try {
+            Intent i = new Intent(action);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        } catch (Exception e) {
+            openSettings();
+        }
+    }
+
+    private void showControlCenter() {
+        beginOverlay(0x5905060B);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(22), dp(20), dp(22), dp(18));
+        Glass.apply(panel, dp(32), density, Glass.TINT_PANEL);
+        panel.setElevation(dp(24));
+
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(text("Control Center", 20, 0xFFFFFFFF, "sans-serif-medium"), new LinearLayout.LayoutParams(0, WRAP, 1f));
+        head.addView(text(ramSummary(), 12, 0x99FFFFFF, "sans-serif"));
+        panel.addView(head);
+
+        View[] tiles = {
+            ccTile(IconView.POWER, "Sleep", null, new Runnable() {
+                @Override
+                public void run() {
+                    if (!HomeWatcherService.sleep()) {
+                        toast("Hold the Home button on your remote, then choose Sleep");
+                    }
+                }
+            }),
+            ccTile(online() ? IconView.WIFI : IconView.WIFI_OFF, "Wi-Fi", online() ? "Connected" : "Offline", new Runnable() {
+                @Override
+                public void run() {
+                    openSystemPage(Settings.ACTION_WIFI_SETTINGS);
+                }
+            }),
+            ccTile(IconView.BLUETOOTH, "Bluetooth", bluetoothOn() ? "On" : "Off", new Runnable() {
+                @Override
+                public void run() {
+                    openSystemPage(Settings.ACTION_BLUETOOTH_SETTINGS);
+                }
+            }),
+            ccTile(IconView.RECENT, "Recent Apps", null, true, new Runnable() {
+                @Override
+                public void run() {
+                    showSwitcher();
+                }
+            }),
+            ccTile(IconView.SETTINGS, "Settings", null, new Runnable() {
+                @Override
+                public void run() {
+                    openSettings();
+                }
+            }),
+            ccTile(IconView.HOME, "Fire TV Home", null, new Runnable() {
+                @Override
+                public void run() {
+                    openAmazonHome();
+                }
+            }),
+            ccTile(IconView.SLIDERS, "Customise", null, true, new Runnable() {
+                @Override
+                public void run() {
+                    showCustomise(0);
+                }
+            }),
+        };
+        int cols = 4;
+        LinearLayout rowL = null;
+        for (int i = 0; i < tiles.length; i++) {
+            if (i % cols == 0) {
+                rowL = new LinearLayout(this);
+                rowL.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(MATCH, WRAP);
+                rl.topMargin = dp(14);
+                panel.addView(rowL, rl);
+            }
+            rowL.addView(tiles[i], new LinearLayout.LayoutParams(0, WRAP, 1f));
+        }
+        for (int k = tiles.length % cols; k > 0 && k < cols; k++) {
+            rowL.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1f));
+        }
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(500), WRAP, Gravity.TOP | Gravity.END);
+        lp.topMargin = dp(24);
+        lp.rightMargin = dp(48);
+        endOverlay(panel, lp, tiles[3]);
+    }
+
+    // ---------------------------------------------------------------- recent apps switcher
+
+    private long[] ram() {
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+            am.getMemoryInfo(mi);
+            return new long[] {mi.totalMem - mi.availMem, mi.totalMem};
+        } catch (Throwable t) {
+            return new long[] {0, 0};
+        }
+    }
+
+    private String ramSummary() {
+        long[] r = ram();
+        if (r[1] <= 0) return "";
+        return String.format(Locale.US, "RAM %.1f GB used of %.1f GB", r[0] / 1e9, r[1] / 1e9);
+    }
+
+    private void updateRam() {
+        if (ramText == null) return;
+        long[] r = ram();
+        ramText.setText(ramSummary());
+        if (ramFill != null && r[1] > 0) {
+            ViewGroup.LayoutParams lp = ramFill.getLayoutParams();
+            lp.width = (int) (dp(90) * Math.min(1.0, r[0] / (double) r[1]));
+            ramFill.setLayoutParams(lp);
+        }
+    }
+
+    private void showSwitcher() {
+        beginOverlay(0x7305060B);
+        switcherShown = true;
+        int screenW = getResources().getDisplayMetrics().widthPixels;
+        int cw = (int) (screenW * 0.30f), ch = cw * 9 / 16;
+
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(56), dp(36), dp(56), dp(36));
+        page.setClipChildren(false);
+
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(text("Recent Apps", 22, 0xFFFFFFFF, "sans-serif-medium"), new LinearLayout.LayoutParams(0, WRAP, 1f));
+        LinearLayout ramPill = new LinearLayout(this);
+        ramPill.setOrientation(LinearLayout.HORIZONTAL);
+        ramPill.setGravity(Gravity.CENTER_VERTICAL);
+        ramPill.setPadding(dp(16), dp(8), dp(16), dp(8));
+        Glass.apply(ramPill, dp(18), density, Glass.TINT_DARK);
+        ramText = text("", 12, 0xE6FFFFFF, "sans-serif-medium");
+        ramPill.addView(ramText);
+        FrameLayout bar = new FrameLayout(this);
+        bar.setBackground(rounded(0x33FFFFFF, 3));
+        ramFill = new View(this);
+        ramFill.setBackground(rounded(0xF2FFFFFF, 3));
+        bar.addView(ramFill, new FrameLayout.LayoutParams(0, MATCH));
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(dp(90), dp(5));
+        bl.leftMargin = dp(12);
+        ramPill.addView(bar, bl);
+        head.addView(ramPill);
+        page.addView(head);
+
+        HorizontalScrollView hsv = new HorizontalScrollView(this);
+        hsv.setHorizontalScrollBarEnabled(false);
+        hsv.setClipChildren(false);
+        hsv.setClipToPadding(false);
+        hsv.setPadding(dp(8), 0, dp(8), 0);
+        switcherRow = new LinearLayout(this);
+        switcherRow.setOrientation(LinearLayout.HORIZONTAL);
+        switcherRow.setClipChildren(false);
+        switcherRow.setClipToPadding(false);
+        switcherRow.setPadding(0, dp(40), 0, dp(20));
+        HashMap<String, AppRepo.App> map = appMap();
+        List<AppRepo.App> recents = pick(Prefs.list(this, Prefs.RECENTS), map, Prefs.list(this, Prefs.HIDDEN), 12);
+        AppTile first = null;
+        for (int i = 0; i < recents.size(); i++) {
+            AppTile t = new AppTile(this, recents.get(i), "switcher", cw, ch, true);
+            wire(t);
+            if (first == null) first = t;
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(WRAP, WRAP);
+            if (i > 0) lp.leftMargin = dp(30);
+            switcherRow.addView(t, lp);
+        }
+        hsv.addView(switcherRow);
+        LinearLayout.LayoutParams hl = new LinearLayout.LayoutParams(MATCH, 0, 1f);
+        page.addView(hsv, hl);
+
+        TextView hint = text(recents.isEmpty() ? "Apps you open from Lumen will show up here."
+                : "OK to open  ·  press ▲ on an app to close it", 13, 0x99FFFFFF, "sans-serif");
+        hint.setGravity(Gravity.CENTER);
+        page.addView(hint, new LinearLayout.LayoutParams(MATCH, WRAP));
+
+        endOverlay(page, new FrameLayout.LayoutParams(MATCH, MATCH), first);
+        switcherShown = true;
+        ui.post(new Runnable() {
+            @Override
+            public void run() {
+                updateRam();
+            }
+        });
+    }
+
+    /** Up on a card: stop that app in the background and drop it from the list. */
+    private void closeRecent(final AppTile t) {
+        final String pkg = t.app.pkg;
+        try {
+            android.app.ActivityManager am = (android.app.ActivityManager) getSystemService(ACTIVITY_SERVICE);
+            am.killBackgroundProcesses(pkg);
+        } catch (Throwable ignored) {
+        }
+        List<String> rec = Prefs.list(this, Prefs.RECENTS);
+        rec.remove(pkg);
+        Prefs.putList(this, Prefs.RECENTS, rec);
+        dirty = true;
+
+        final int idx = switcherRow.indexOfChild(t);
+        t.animate().translationY(-dp(140)).alpha(0f).scaleX(0.9f).scaleY(0.9f).setDuration(260)
+                .setInterpolator(new android.view.animation.AccelerateInterpolator())
+                .withEndAction(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (switcherRow == null) return;
+                        switcherRow.removeView(t);
+                        if (switcherRow.getChildCount() > 0) {
+                            View first = switcherRow.getChildAt(0);
+                            ((LinearLayout.LayoutParams) first.getLayoutParams()).leftMargin = 0;
+                            View next = switcherRow.getChildAt(Math.min(idx, switcherRow.getChildCount() - 1));
+                            next.requestFocus();
+                        } else {
+                            hidePanel(true);
+                            toast("All recent apps closed");
+                        }
+                        ui.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                updateRam();
+                            }
+                        }, 500);
+                    }
+                }).start();
+        toast(t.app.label + " closed");
+    }
+
     // ---------------------------------------------------------------- customise
 
     private static String onOff(boolean b) {
@@ -1239,6 +1808,17 @@ public class MainActivity extends Activity {
             }
         }));
 
+        final int pillStyle = Prefs.getInt(this, "pill", StatusPill.FULL);
+        opts.add(new Opt("Status pill  ·  " + StatusPill.NAMES[pillStyle], new Runnable() {
+            @Override
+            public void run() {
+                int next = (pillStyle + 1) % StatusPill.NAMES.length;
+                Prefs.setInt(MainActivity.this, "pill", next);
+                pill.build(next);
+                showCustomise(4);
+            }
+        }));
+
         final int mode = Prefs.clockMode(this);
         String clockLabel = mode == -1 ? "Automatic" : (mode == 1 ? "24-hour" : "12-hour");
         opts.add(new Opt("Clock  ·  " + clockLabel, new Runnable() {
@@ -1247,7 +1827,7 @@ public class MainActivity extends Activity {
                 int next = mode == -1 ? 1 : (mode == 1 ? 0 : -1);
                 Prefs.setClockMode(MainActivity.this, next);
                 updateClock();
-                showCustomise(4);
+                showCustomise(5);
             }
         }));
 
@@ -1257,7 +1837,7 @@ public class MainActivity extends Activity {
             public void run() {
                 Prefs.setShowRecent(MainActivity.this, !rec);
                 render(null, null);
-                showCustomise(5);
+                showCustomise(6);
             }
         }));
 
@@ -1279,7 +1859,7 @@ public class MainActivity extends Activity {
                     showSetup();
                 } else {
                     Prefs.setTakeover(MainActivity.this, !on);
-                    showCustomise(7);
+                    showCustomise(8);
                 }
             }
         }));
@@ -1296,7 +1876,7 @@ public class MainActivity extends Activity {
 
         opts.add(new Opt("Close", null));
 
-        showPanel(null, "Customise", "Lumen Home 1.2.2  ·  No ads  ·  No tracking", null, opts, focusIndex, 500);
+        showPanel(null, "Customise", "Lumen Home 1.3  ·  No ads  ·  No tracking", null, opts, focusIndex, 500);
     }
 
     private void showWallpapers(int focusIndex) {
@@ -1540,7 +2120,7 @@ public class MainActivity extends Activity {
                     h.remove(a.pkg);
                     Prefs.putList(MainActivity.this, Prefs.HIDDEN, h);
                     render(null, null);
-                    if (hiddenInstalled().isEmpty()) showCustomise(6);
+                    if (hiddenInstalled().isEmpty()) showCustomise(7);
                     else showHidden();
                 }
             }));
@@ -1548,7 +2128,7 @@ public class MainActivity extends Activity {
         opts.add(new Opt("Back", new Runnable() {
             @Override
             public void run() {
-                showCustomise(6);
+                showCustomise(7);
             }
         }));
         String msg = hidden.isEmpty() ? "No hidden apps." : null;
@@ -1566,7 +2146,7 @@ public class MainActivity extends Activity {
         opts.add(new Opt("Back", new Runnable() {
             @Override
             public void run() {
-                showCustomise(7);
+                showCustomise(8);
             }
         }));
         showPanel(null, "Home button setup", "One-time setup", msg, opts, 0, 640);

@@ -7,6 +7,10 @@ An ad-free, Apple TV-style home screen for Amazon Fire TV (Fire OS devices).
 - Favourites dock, Recently used row and an All apps grid; pin, reorder, hide or uninstall from the remote
 - Wallpapers: four built-in scenes, colour gradients or your own picture, with an adjustable dark overlay
 - Widgets: weather (Open-Meteo, no key), verse of the day (KJV), storage and network
+- Status pill (Minimal, Weather or Full) that opens Control Center
+- Folders: group apps, opened on frosted glass
+- Control Center: Sleep, Wi-Fi, Bluetooth, Recent Apps, Settings, Fire TV Home, Customise
+- Recent Apps switcher with a live RAM meter; press Up on a card to close that app
 - No ads, no tracking; everything stays on the device
 
 ## Install
