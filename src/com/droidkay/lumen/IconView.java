@@ -10,8 +10,7 @@ import android.view.View;
 /** Line icons drawn in code, so they look the same on every Fire OS version. */
 final class IconView extends View {
     static final int SETTINGS = 0, HOME = 1, SLIDERS = 2, SUN = 3, MOON = 4, PARTLY = 5, CLOUD = 6,
-            RAIN = 7, STORM = 8, FOG = 9, WIFI = 10, WIFI_OFF = 11, DISK = 12, BLUETOOTH = 13, RECENT = 14, POWER = 15,
-            INPUT = 16;
+            RAIN = 7, STORM = 8, FOG = 9, WIFI = 10, WIFI_OFF = 11, DISK = 12, BLUETOOTH = 13, RECENT = 14, POWER = 15;
 
     private int type;
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -187,18 +186,6 @@ final class IconView extends View {
                 c.drawArc(rf, -60, 300, false, p);
                 c.drawLine(cx, cy - s * 0.42f, cx, cy - s * 0.04f, p);
                 break;
-            case INPUT: {
-                // arrow entering a screen: the universal "input source" glyph
-                rf.set(cx - s * 0.06f, cy - s * 0.34f, cx + s * 0.38f, cy + s * 0.34f);
-                c.drawRoundRect(rf, s * 0.07f, s * 0.07f, p);
-                c.drawLine(cx - s * 0.40f, cy, cx + s * 0.10f, cy, p);
-                path.reset();
-                path.moveTo(cx - s * 0.10f, cy - s * 0.18f);
-                path.lineTo(cx + s * 0.10f, cy);
-                path.lineTo(cx - s * 0.10f, cy + s * 0.18f);
-                c.drawPath(path, p);
-                break;
-            }
             default:
                 break;
         }

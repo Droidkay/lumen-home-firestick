@@ -21,21 +21,18 @@ import android.widget.TextView;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
-import java.util.List;
 import java.util.Locale;
 
 /**
- * The widgets in the top shelf. Row one: analog clock, date, prayer times and the Inputs card.
+ * The widgets in the top shelf. Row one: analog clock, date, prayer times.
  * Row two: weather, storage, network and the sleep timer. Each one can be switched off in Customise.
  */
 final class WidgetBar extends LinearLayout {
-    static final String CLOCK = "clock", DATE = "date", PRAYER = "prayer", INPUTS = "inputs",
+    static final String CLOCK = "clock", DATE = "date", PRAYER = "prayer",
             WEATHER = "weather", STORAGE = "storage", NETWORK = "network", SLEEP = "sleep";
 
-    /** The two widgets you can press OK on. */
+    /** The widget you can press OK on. */
     interface Listener {
-        void onInputs();
-
         void onSleepTimer();
     }
 
@@ -51,7 +48,6 @@ final class WidgetBar extends LinearLayout {
     private TextView prayerPill, prayerTime, prayerSub;
     private TextView[] prayerCols;
     private String[] prayerData;
-    private TextView inputsSub;
     private TextView sleepSub;
     private IconView weatherIcon, netIcon;
     private TextView weatherTemp, weatherDesc, weatherPlace;
@@ -152,7 +148,6 @@ final class WidgetBar extends LinearLayout {
         dateNum = null;
         prayerTime = null;
         prayerData = null;
-        inputsSub = null;
         sleepSub = null;
         weatherIcon = null;
         storageMain = null;
@@ -180,7 +175,7 @@ final class WidgetBar extends LinearLayout {
         }
 
         if (Prefs.widget(ctx, PRAYER)) {
-            LinearLayout c = card(row1, 2.9f, 0, ROW1_H, Glass.TINT_DARK);
+            LinearLayout c = card(row1, 3.2f, 0, ROW1_H, Glass.TINT_DARK);
             LinearLayout head = new LinearLayout(getContext());
             head.setOrientation(HORIZONTAL);
             head.setGravity(Gravity.CENTER_VERTICAL);
@@ -214,28 +209,6 @@ final class WidgetBar extends LinearLayout {
             }
             c.addView(cols, gap(8));
             setPrayer(PrayerTimes.cached(ctx, Prefs.city(ctx)));
-        }
-
-        if (Prefs.widget(ctx, INPUTS)) {
-            LinearLayout c = card(row1, 1.5f, 0, ROW1_H, 0xE6F4F5F8);
-            pressable(c, lastGlass, 0xE6F4F5F8, 0xFFFFFFFF, new Runnable() {
-                @Override
-                public void run() {
-                    if (listener != null) listener.onInputs();
-                }
-            });
-            LinearLayout top = new LinearLayout(getContext());
-            top.setOrientation(HORIZONTAL);
-            top.setGravity(Gravity.CENTER_VERTICAL);
-            IconView ic = new IconView(getContext(), IconView.INPUT, dp(1.8f));
-            ic.setColor(0xFF0B0C10);
-            top.addView(ic, new LayoutParams(dp(26), dp(26)));
-            c.addView(top, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
-            TextView title = text("Inputs", 20, 0xFF0B0C10, "sans-serif-medium");
-            c.addView(title, gap(18));
-            inputsSub = text("HDMI / TV / AV", 12, 0x990B0C10, "sans-serif-medium");
-            c.addView(inputsSub, gap(4));
-            c.setContentDescription("Inputs");
         }
 
         LinearLayout row2 = newRow(false);
@@ -324,7 +297,7 @@ final class WidgetBar extends LinearLayout {
         refresh(ctx);
     }
 
-    /** Cheap local refresh: clock face, date, next prayer, inputs, sleep timer, storage, network. */
+    /** Cheap local refresh: clock face, date, next prayer, sleep timer, storage, network. */
     void refresh(Context ctx) {
         if (analog != null) analog.invalidate();
         if (dateNum != null) {
@@ -335,10 +308,6 @@ final class WidgetBar extends LinearLayout {
             dateMonth.setText(new SimpleDateFormat("MMM / yyyy", loc).format(d).toUpperCase(loc));
         }
         if (prayerTime != null) setPrayer(prayerData);
-        if (inputsSub != null) {
-            List<Inputs.Input> in = Inputs.list(ctx);
-            inputsSub.setText(in.isEmpty() ? "HDMI / TV / AV" : Inputs.summary(in));
-        }
         if (sleepSub != null) {
             int left = SleepTimer.remainingMinutes(ctx);
             sleepSub.setText(left < 0 ? "SET" : left + " MIN LEFT");

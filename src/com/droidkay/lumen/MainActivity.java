@@ -339,11 +339,6 @@ public class MainActivity extends Activity {
         widgets = new WidgetBar(this);
         widgets.setListener(new WidgetBar.Listener() {
             @Override
-            public void onInputs() {
-                showInputs();
-            }
-
-            @Override
             public void onSleepTimer() {
                 showSleepTimer();
             }
@@ -492,31 +487,6 @@ public class MainActivity extends Activity {
         widgets.build(this);
         maybeRefreshWeather(false);
         maybeRefreshPrayer(false);
-    }
-
-    /** Inputs widget: lists the TV's HDMI/AV inputs and switches to the one you pick. */
-    private void showInputs() {
-        final List<Inputs.Input> list = Inputs.list(this);
-        ArrayList<Opt> opts = new ArrayList<Opt>();
-        for (final Inputs.Input in : list) {
-            opts.add(new Opt(in.label, new Runnable() {
-                @Override
-                public void run() {
-                    Prefs.setPauseUntil(MainActivity.this, System.currentTimeMillis() + PAUSE_MS);
-                    if (!Inputs.open(MainActivity.this, in)) {
-                        Prefs.setPauseUntil(MainActivity.this, 0L);
-                        toast("This device can't switch to " + in.label);
-                    }
-                }
-            }));
-        }
-        opts.add(new Opt(list.isEmpty() ? "OK" : "Cancel", null));
-        String msg = list.isEmpty()
-                ? "No HDMI inputs are available on this device.\n\nA Fire TV Stick is itself an HDMI source, "
-                + "so it has no inputs to switch. Change input with your TV's own remote (Input / Source button). "
-                + "On a Fire TV Edition television this lists the TV's HDMI ports."
-                : null;
-        showPanel(null, "Inputs", list.isEmpty() ? "HDMI / TV / AV" : "Switch the TV to…", msg, opts, 0, 520);
     }
 
     /** Sleep timer widget: pick how long until the TV goes to sleep. */
@@ -1690,12 +1660,6 @@ public class MainActivity extends Activity {
                     showCustomise(0);
                 }
             }),
-            ccTile(IconView.INPUT, "Inputs", null, true, new Runnable() {
-                @Override
-                public void run() {
-                    showInputs();
-                }
-            }),
         };
         int cols = 4;
         LinearLayout rowL = null;
@@ -2150,7 +2114,6 @@ public class MainActivity extends Activity {
             {WidgetBar.CLOCK, "Analog clock"},
             {WidgetBar.DATE, "Date"},
             {WidgetBar.PRAYER, "Prayer times"},
-            {WidgetBar.INPUTS, "Inputs (HDMI)"},
             {WidgetBar.WEATHER, "Weather"},
             {WidgetBar.STORAGE, "Storage"},
             {WidgetBar.NETWORK, "Network"},
@@ -2196,7 +2159,7 @@ public class MainActivity extends Activity {
                     widgets.setWeather(Weather.cached(MainActivity.this), MainActivity.this);
                     maybeRefreshWeather(true);
                     maybeRefreshPrayer(true);
-                    showWidgets(8);
+                    showWidgets(7);
                 }
             }));
         }

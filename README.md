@@ -6,11 +6,10 @@ An ad-free, Apple TV-style home screen for Amazon Fire TV (Fire OS devices).
 - Parallax tilt and light sweep on the selected app
 - Favourites dock, Recently used row and an All apps grid; pin, reorder, hide or uninstall from the remote
 - Wallpapers: four built-in scenes, colour gradients or your own picture, with an adjustable dark overlay
-- Widgets: analog clock, date, prayer times (Aladhan, no key), Inputs (HDMI/AV picker), weather (Open-Meteo, no key), storage, network and a sleep timer; each can be switched off in Customise
+- Widgets: analog clock, date, prayer times (Aladhan, no key), weather (Open-Meteo, no key), storage, network and a sleep timer; each can be switched off in Customise
 - Status pill (Minimal, Weather or Full) that opens Control Center
 - Folders: group apps, opened on frosted glass
-- Control Center: Sleep, Wi-Fi, Bluetooth, Recent Apps, Settings, Fire TV Home, Customise, Inputs
-- Inputs: lists the TV's HDMI/AV ports and switches to the one you pick (Fire TV Edition TVs; a Fire TV Stick has no inputs of its own)
+- Control Center: Sleep, Wi-Fi, Bluetooth, Recent Apps, Settings, Fire TV Home, Customise
 - Sleep timer: 15 min to 2 hours, uses the Home-button service to put the TV to sleep
 - Recent Apps switcher with a live RAM meter; press Up on a card to close that app
 - No ads, no tracking; everything stays on the device
