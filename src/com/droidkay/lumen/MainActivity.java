@@ -154,10 +154,17 @@ public class MainActivity extends Activity {
         updateClock();
         widgets.refresh(this);
         maybeRefreshWeather(false);
+        startPower();
         if (dirty && loaded) {
             dirty = false;
             render(wantSec, wantPkg);
         }
+    }
+
+    @Override
+    protected void onPause() {
+        powerVisible = false;
+        super.onPause();
     }
 
     @Override
@@ -340,6 +347,11 @@ public class MainActivity extends Activity {
             public void onSleepTimer() {
                 showSleepTimer();
             }
+
+            @Override
+            public void onPower() {
+                showPower();
+            }
         });
         LinearLayout.LayoutParams wl = new LinearLayout.LayoutParams(MATCH, WRAP);
         wl.topMargin = dp(20);
@@ -462,6 +474,115 @@ public class MainActivity extends Activity {
     private void rebuildWidgets() {
         widgets.build(this);
         maybeRefreshWeather(false);
+        startPower();
+    }
+
+    // ---------------------------------------------------------------- power (Felicity inverter, like Lumen Power)
+
+    private volatile boolean powerVisible, powerBusy;
+    private Boolean lastGrid;
+    private int powerFails;
+    private long lastDiscover;
+    private Reading lastReading;
+
+    private final Runnable powerTick = new Runnable() {
+        @Override
+        public void run() {
+            if (!powerVisible || destroyed) return;
+            pollPower(false);
+            ui.postDelayed(this, 20000);
+        }
+    };
+
+    private void startPower() {
+        ui.removeCallbacks(powerTick);
+        powerVisible = Prefs.widget(this, WidgetBar.POWER);
+        if (powerVisible) ui.post(powerTick);
+    }
+
+    /** Reads the inverter in the background; finds it on the Wi-Fi first if needed. */
+    private void pollPower(final boolean forceFind) {
+        if (powerBusy) return;
+        powerBusy = true;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                String host = Prefs.getStr(MainActivity.this, "inverterHost", null);
+                Reading r = null;
+                String err = null;
+                long now = System.currentTimeMillis();
+                boolean find = forceFind || host == null || (powerFails >= 3 && now - lastDiscover > 10 * 60_000L);
+                if (find) {
+                    lastDiscover = now;
+                    String found = Felicity.discover(null);
+                    if (found != null) {
+                        host = found;
+                        Prefs.setStr(MainActivity.this, "inverterHost", found);
+                        powerFails = 0;
+                    }
+                }
+                if (host == null) {
+                    err = "No Felicity inverter found on this Wi-Fi";
+                } else {
+                    try {
+                        r = Felicity.read(host);
+                        powerFails = 0;
+                    } catch (Exception e) {
+                        powerFails++;
+                        err = "Can't reach the inverter";
+                    }
+                }
+                final Reading fr = r;
+                final String fe = err;
+                ui.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        powerBusy = false;
+                        if (destroyed) return;
+                        if (fr != null) {
+                            lastReading = fr;
+                            boolean grid = fr.gridOn();
+                            if (lastGrid != null && lastGrid != grid) {
+                                toast(grid ? "NEPA is back ⚡" : "NEPA is gone. Running on " + (fr.solar() > 30 ? "solar and battery" : "battery"));
+                            }
+                            lastGrid = grid;
+                            widgets.setPower(fr, null);
+                        } else {
+                            widgets.setPower(lastReading, fe);
+                        }
+                    }
+                });
+            }
+        }, "lumen-power").start();
+    }
+
+    /** Pressing OK on the Power widget. */
+    private void showPower() {
+        ArrayList<Opt> opts = new ArrayList<Opt>();
+        opts.add(new Opt("Refresh now", new Runnable() {
+            @Override
+            public void run() {
+                pollPower(false);
+            }
+        }));
+        opts.add(new Opt("Find my inverter again", new Runnable() {
+            @Override
+            public void run() {
+                toast("Looking for the inverter on your Wi-Fi…");
+                pollPower(true);
+            }
+        }));
+        opts.add(new Opt("Close", null));
+        String host = Prefs.getStr(this, "inverterHost", null);
+        String msg = null;
+        Reading r = lastReading;
+        if (r != null) {
+            msg = "Battery " + (Double.isNaN(r.soc) ? "--" : Math.round(r.soc) + "%")
+                    + "\nSolar " + Math.round(r.solar()) + " W   ·   Home " + Math.round(r.load()) + " W"
+                    + "\nNEPA " + (r.gridOn() ? "on (" + Math.round(r.grid()) + " W)" : "off");
+        }
+        showPanel(null, "Power", host == null ? "Felicity inverter not found yet" : "Felicity inverter · " + host,
+                msg, opts, 0, 460);
     }
 
     /** Sleep timer widget: pick how long until the TV goes to sleep. */
@@ -2089,6 +2210,7 @@ public class MainActivity extends Activity {
             {WidgetBar.CLOCK, "Analog clock"},
             {WidgetBar.DATE, "Date"},
             {WidgetBar.WEATHER, "Weather"},
+            {WidgetBar.POWER, "Power (Felicity inverter)"},
             {WidgetBar.STORAGE, "Storage"},
             {WidgetBar.NETWORK, "Network"},
             {WidgetBar.SLEEP, "Sleep timer"},
@@ -2132,7 +2254,7 @@ public class MainActivity extends Activity {
                     Prefs.setInt(MainActivity.this, "city", idx);
                     widgets.setWeather(Weather.cached(MainActivity.this), MainActivity.this);
                     maybeRefreshWeather(true);
-                    showWidgets(6);
+                    showWidgets(7);
                 }
             }));
         }

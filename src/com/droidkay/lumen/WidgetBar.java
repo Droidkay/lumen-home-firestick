@@ -23,17 +23,19 @@ import java.util.Date;
 import java.util.Locale;
 
 /**
- * The widgets in the top shelf. Row one: analog clock, date and weather.
+ * The widgets in the top shelf. Row one: analog clock, date, weather and power (your Felicity inverter).
  * Row two: storage, network and the sleep timer. Each one can be switched off in Customise;
  * the clock and date keep their size, so switching others off never stretches them.
  */
 final class WidgetBar extends LinearLayout {
-    static final String CLOCK = "clock", DATE = "date",
+    static final String CLOCK = "clock", DATE = "date", POWER = "power",
             WEATHER = "weather", STORAGE = "storage", NETWORK = "network", SLEEP = "sleep";
 
     /** The widget you can press OK on. */
     interface Listener {
         void onSleepTimer();
+
+        void onPower();
     }
 
     private static final int ACCENT = AnalogClockView.ACCENT;
@@ -51,6 +53,10 @@ final class WidgetBar extends LinearLayout {
     private TextView storageMain, storageSub;
     private View storageBar;
     private TextView netMain, netSub;
+    private TextView powerPill, powerPct, powerState, powerSub;
+    private View powerBar;
+    private GradientDrawable powerFill;
+    private IconView powerIcon;
 
     WidgetBar(Context c) {
         super(c);
@@ -147,6 +153,7 @@ final class WidgetBar extends LinearLayout {
         weatherIcon = null;
         storageMain = null;
         netMain = null;
+        powerPct = null;
 
         LinearLayout row1 = newRow(true);
 
@@ -170,7 +177,7 @@ final class WidgetBar extends LinearLayout {
         }
 
         if (Prefs.widget(ctx, WEATHER)) {
-            LinearLayout c = card(row1, 1.0f, 0, ROW1_H, Glass.TINT_DARK);
+            LinearLayout c = card(row1, 0, 236, ROW1_H, Glass.TINT_DARK);
             c.addView(caption("WEATHER"));
             LinearLayout row = new LinearLayout(getContext());
             row.setOrientation(HORIZONTAL);
@@ -188,6 +195,59 @@ final class WidgetBar extends LinearLayout {
             weatherPlace = text(Weather.CITIES[Prefs.city(ctx)].name, 12, 0x99FFFFFF, "sans-serif");
             c.addView(weatherPlace, gap(3));
             setWeather(Weather.cached(ctx), ctx);
+        }
+
+        if (Prefs.widget(ctx, POWER)) {
+            LinearLayout c = card(row1, 1.0f, 0, ROW1_H, Glass.TINT_DARK);
+            pressable(c, lastGlass, Glass.TINT_DARK, 0x4DFFFFFF, new Runnable() {
+                @Override
+                public void run() {
+                    if (listener != null) listener.onPower();
+                }
+            });
+            c.setContentDescription("Power");
+            LinearLayout head = new LinearLayout(getContext());
+            head.setOrientation(HORIZONTAL);
+            head.setGravity(Gravity.CENTER_VERTICAL);
+            head.addView(caption("POWER"), new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
+            powerPill = text("", 9, 0xFFFFFFFF, "sans-serif-medium");
+            powerPill.setLetterSpacing(0.1f);
+            powerPill.setPadding(dp(9), dp(4), dp(9), dp(4));
+            head.addView(powerPill, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+            c.addView(head, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+
+            LinearLayout mid = new LinearLayout(getContext());
+            mid.setOrientation(HORIZONTAL);
+            mid.setGravity(Gravity.CENTER_VERTICAL);
+            powerIcon = new IconView(getContext(), IconView.BOLT, dp(1.8f));
+            powerIcon.setColor(0xFF34D17A);
+            mid.addView(powerIcon, new LayoutParams(dp(30), dp(30)));
+            powerPct = text("--%", 34, 0xFFFFFFFF, "sans-serif-light");
+            LayoutParams pl = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+            pl.leftMargin = dp(8);
+            mid.addView(powerPct, pl);
+            powerState = text("", 13, 0xE6FFFFFF, "sans-serif-medium");
+            LayoutParams sl = new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f);
+            sl.leftMargin = dp(14);
+            mid.addView(powerState, sl);
+            c.addView(mid, gap(4));
+
+            GradientDrawable track = new GradientDrawable();
+            track.setColor(0x33FFFFFF);
+            track.setCornerRadius(dp(3));
+            GradientDrawable fill = new GradientDrawable();
+            fill.setColor(0xFF34D17A);
+            fill.setCornerRadius(dp(3));
+            powerFill = fill;
+            ClipDrawable clip = new ClipDrawable(fill, Gravity.START, ClipDrawable.HORIZONTAL);
+            powerBar = new View(getContext());
+            powerBar.setBackground(new LayerDrawable(new android.graphics.drawable.Drawable[] {track, clip}));
+            LayoutParams bl = new LayoutParams(LayoutParams.MATCH_PARENT, dp(5));
+            bl.topMargin = dp(8);
+            c.addView(powerBar, bl);
+            powerSub = text("Looking for your inverter…", 12, 0x99FFFFFF, "sans-serif");
+            c.addView(powerSub, gap(8));
+            setPower(lastPower, lastPowerError);
         }
 
         LinearLayout row2 = newRow(false);
@@ -316,6 +376,48 @@ final class WidgetBar extends LinearLayout {
             }
             netSub.setText(sub);
         }
+    }
+
+    private Reading lastPower;
+    private String lastPowerError;
+
+    /** Latest inverter reading (null while none yet), or an error to show. */
+    void setPower(Reading r, String error) {
+        lastPower = r;
+        lastPowerError = error;
+        if (powerPct == null) return;
+        if (r == null) {
+            powerPct.setText("--%");
+            powerState.setText("");
+            powerPill.setVisibility(INVISIBLE);
+            powerSub.setText(error != null ? error : "Looking for your inverter…");
+            ((LayerDrawable) powerBar.getBackground()).getDrawable(1).setLevel(0);
+            return;
+        }
+        boolean grid = r.gridOn();
+        GradientDrawable pb = new GradientDrawable();
+        pb.setColor(grid ? 0xFF22A35A : 0x66FFFFFF);
+        pb.setCornerRadius(dp(10));
+        powerPill.setBackground(pb);
+        powerPill.setText(grid ? "NEPA ON" : "NO NEPA");
+        powerPill.setVisibility(VISIBLE);
+        int soc = Double.isNaN(r.soc) ? -1 : (int) Math.round(r.soc);
+        powerPct.setText(soc < 0 ? "--%" : soc + "%");
+        int color = soc < 0 ? 0xFFFFFFFF : soc <= 20 ? 0xFFFF5A4A : soc <= 40 ? 0xFFFFC23D : 0xFF34D17A;
+        powerIcon.setColor(color);
+        LayerDrawable ld = (LayerDrawable) powerBar.getBackground();
+        if (powerFill != null) powerFill.setColor(color);
+        ld.getDrawable(1).setLevel(Math.max(0, soc) * 100);
+        double b = r.battery();
+        powerState.setText(b > 30 ? "Charging " + watts(b) : b < -30 ? "Using " + watts(-b) : "Idle");
+        String sub = "Solar " + watts(r.solar()) + "  ·  Home " + watts(r.load());
+        if (error != null) sub = error + "  ·  last: " + sub;
+        powerSub.setText(sub);
+    }
+
+    private static String watts(double w) {
+        w = Math.abs(w);
+        return w >= 1000 ? String.format(Locale.US, "%.1f kW", w / 1000) : Math.round(w) + " W";
     }
 
     void setWeather(Weather.Now now, Context ctx) {

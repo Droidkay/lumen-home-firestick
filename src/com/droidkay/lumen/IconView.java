@@ -10,7 +10,7 @@ import android.view.View;
 /** Line icons drawn in code, so they look the same on every Fire OS version. */
 final class IconView extends View {
     static final int SETTINGS = 0, HOME = 1, SLIDERS = 2, SUN = 3, MOON = 4, PARTLY = 5, CLOUD = 6,
-            RAIN = 7, STORM = 8, FOG = 9, WIFI = 10, WIFI_OFF = 11, DISK = 12, BLUETOOTH = 13, RECENT = 14, POWER = 15;
+            RAIN = 7, STORM = 8, FOG = 9, WIFI = 10, WIFI_OFF = 11, DISK = 12, BLUETOOTH = 13, RECENT = 14, POWER = 15, BOLT = 16;
 
     private int type;
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -180,6 +180,17 @@ final class IconView extends View {
                 c.drawRoundRect(rf, s * 0.06f, s * 0.06f, p);
                 c.drawLine(cx - s * 0.36f, cy - s * 0.12f, cx - s * 0.36f, cy + s * 0.34f, p);
                 c.drawLine(cx - s * 0.36f, cy + s * 0.34f, cx + s * 0.18f, cy + s * 0.34f, p);
+                break;
+            case BOLT:
+                path.reset();
+                path.moveTo(cx + s * 0.08f, cy - s * 0.42f);
+                path.lineTo(cx - s * 0.24f, cy + s * 0.06f);
+                path.lineTo(cx - s * 0.02f, cy + s * 0.06f);
+                path.lineTo(cx - s * 0.08f, cy + s * 0.42f);
+                path.lineTo(cx + s * 0.24f, cy - s * 0.08f);
+                path.lineTo(cx + s * 0.02f, cy - s * 0.08f);
+                path.close();
+                c.drawPath(path, p);
                 break;
             case POWER:
                 rf.set(cx - s * 0.32f, cy - s * 0.30f, cx + s * 0.32f, cy + s * 0.34f);
