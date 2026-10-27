@@ -18,16 +18,43 @@ import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 
-/** The row of glass widgets in the top shelf: weather, verse of the day, storage and network. */
+/**
+ * The widgets in the top shelf. Row one: analog clock, date, prayer times and the Inputs card.
+ * Row two: weather, storage, network and the sleep timer. Each one can be switched off in Customise.
+ */
 final class WidgetBar extends LinearLayout {
-    static final String WEATHER = "weather", VERSE = "verse", STORAGE = "storage", NETWORK = "network";
+    static final String CLOCK = "clock", DATE = "date", PRAYER = "prayer", INPUTS = "inputs",
+            WEATHER = "weather", STORAGE = "storage", NETWORK = "network", SLEEP = "sleep";
+
+    /** The two widgets you can press OK on. */
+    interface Listener {
+        void onInputs();
+
+        void onSleepTimer();
+    }
+
+    private static final int ACCENT = AnalogClockView.ACCENT;
+    private static final int ROW1_H = 132, ROW2_H = 104;
 
     private final float density;
+    private Listener listener;
+    private Glass lastGlass;
+
+    private AnalogClockView analog;
+    private TextView dateDay, dateNum, dateMonth;
+    private TextView prayerPill, prayerTime, prayerSub;
+    private TextView[] prayerCols;
+    private String[] prayerData;
+    private TextView inputsSub;
+    private TextView sleepSub;
     private IconView weatherIcon, netIcon;
     private TextView weatherTemp, weatherDesc, weatherPlace;
-    private TextView verseText, verseRef;
     private TextView storageMain, storageSub;
     private View storageBar;
     private TextView netMain, netSub;
@@ -35,20 +62,17 @@ final class WidgetBar extends LinearLayout {
     WidgetBar(Context c) {
         super(c);
         density = c.getResources().getDisplayMetrics().density;
-        setOrientation(HORIZONTAL);
-        setGravity(Gravity.BOTTOM);
+        setOrientation(VERTICAL);
+        setClipChildren(false);
+        setClipToPadding(false);
+    }
+
+    void setListener(Listener l) {
+        listener = l;
     }
 
     private int dp(float v) {
         return (int) (v * density + 0.5f);
-    }
-
-    static GradientDrawable glass(float density, float radiusDp) {
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(0x59101218);
-        g.setCornerRadius(radiusDp * density);
-        g.setStroke((int) Math.max(1, density), 0x26FFFFFF);
-        return g;
     }
 
     private TextView text(String s, float sp, int color, String family) {
@@ -69,14 +93,28 @@ final class WidgetBar extends LinearLayout {
         return t;
     }
 
-    private LinearLayout card(int widthDp) {
+    private LinearLayout newRow(boolean first) {
+        LinearLayout row = new LinearLayout(getContext());
+        row.setOrientation(HORIZONTAL);
+        row.setClipChildren(false);
+        row.setClipToPadding(false);
+        LayoutParams lp = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        if (!first) lp.topMargin = dp(12);
+        addView(row, lp);
+        return row;
+    }
+
+    /** weight > 0 shares the row; fixedWidthDp > 0 pins the width instead. */
+    private LinearLayout card(LinearLayout row, float weight, int fixedWidthDp, int heightDp, int tint) {
         LinearLayout card = new LinearLayout(getContext());
         card.setOrientation(VERTICAL);
-        card.setPadding(dp(18), dp(15), dp(18), dp(15));
-        Glass.apply(card, dp(22), density, Glass.TINT_DARK);
-        LayoutParams lp = new LayoutParams(dp(widthDp), dp(112));
-        if (getChildCount() > 0) lp.leftMargin = dp(12);
-        addView(card, lp);
+        card.setPadding(dp(16), dp(13), dp(16), dp(13));
+        lastGlass = Glass.apply(card, dp(22), density, tint);
+        LayoutParams lp = fixedWidthDp > 0
+                ? new LayoutParams(dp(fixedWidthDp), dp(heightDp))
+                : new LayoutParams(0, dp(heightDp), weight);
+        if (row.getChildCount() > 0) lp.leftMargin = dp(12);
+        row.addView(card, lp);
         return card;
     }
 
@@ -86,52 +124,148 @@ final class WidgetBar extends LinearLayout {
         return lp;
     }
 
+    /** Makes a card something you can focus and press OK on. */
+    private void pressable(final LinearLayout card, final Glass glass, final int rest, final int focused,
+                           final Runnable action) {
+        card.setFocusable(true);
+        card.setClickable(true);
+        card.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View v, boolean f) {
+                glass.setGlassTint(f ? focused : rest);
+                float s = f ? 1.06f : 1f;
+                card.animate().scaleX(s).scaleY(s).setDuration(140).start();
+            }
+        });
+        card.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                action.run();
+            }
+        });
+    }
+
     /** Rebuilds the bar with the widgets switched on in Customise. */
     void build(Context ctx) {
         removeAllViews();
+        analog = null;
+        dateNum = null;
+        prayerTime = null;
+        prayerData = null;
+        inputsSub = null;
+        sleepSub = null;
         weatherIcon = null;
-        verseText = null;
         storageMain = null;
         netMain = null;
 
+        LinearLayout row1 = newRow(true);
+
+        if (Prefs.widget(ctx, CLOCK)) {
+            LinearLayout c = card(row1, 0, ROW1_H, ROW1_H, Glass.TINT_DARK);
+            c.setPadding(dp(12), dp(12), dp(12), dp(12));
+            analog = new AnalogClockView(getContext());
+            c.addView(analog, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+        }
+
+        if (Prefs.widget(ctx, DATE)) {
+            LinearLayout c = card(row1, 1.0f, 0, ROW1_H, Glass.TINT_DARK);
+            dateDay = caption("");
+            dateDay.setTypeface(Typeface.create("monospace", Typeface.NORMAL));
+            c.addView(dateDay);
+            dateNum = text("", 52, 0xFFFFFFFF, "sans-serif-light");
+            c.addView(dateNum, gap(6));
+            dateMonth = text("", 11, ACCENT, "monospace");
+            dateMonth.setLetterSpacing(0.08f);
+            c.addView(dateMonth, gap(8));
+        }
+
+        if (Prefs.widget(ctx, PRAYER)) {
+            LinearLayout c = card(row1, 2.9f, 0, ROW1_H, Glass.TINT_DARK);
+            LinearLayout head = new LinearLayout(getContext());
+            head.setOrientation(HORIZONTAL);
+            head.setGravity(Gravity.CENTER_VERTICAL);
+            LayoutParams cap = new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f);
+            head.addView(caption("PRAYER TIMES"), cap);
+            prayerPill = text("", 9, 0xFFFFFFFF, "sans-serif-medium");
+            prayerPill.setLetterSpacing(0.1f);
+            prayerPill.setPadding(dp(9), dp(4), dp(9), dp(4));
+            GradientDrawable pb = new GradientDrawable();
+            pb.setColor(ACCENT);
+            pb.setCornerRadius(dp(10));
+            prayerPill.setBackground(pb);
+            head.addView(prayerPill, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+            c.addView(head, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+
+            prayerTime = text("--:--", 34, 0xFFFFFFFF, "sans-serif-light");
+            c.addView(prayerTime, gap(6));
+            prayerSub = text("Loading…", 12, 0xB3FFFFFF, "sans-serif-medium");
+            c.addView(prayerSub, gap(3));
+
+            LinearLayout cols = new LinearLayout(getContext());
+            cols.setOrientation(HORIZONTAL);
+            prayerCols = new TextView[PrayerTimes.NAMES.length];
+            for (int i = 0; i < prayerCols.length; i++) {
+                LinearLayout col = new LinearLayout(getContext());
+                col.setOrientation(VERTICAL);
+                col.addView(text(PrayerTimes.NAMES[i], 9, 0x99FFFFFF, "sans-serif-medium"));
+                prayerCols[i] = text("--:--", 11, 0xE6FFFFFF, "sans-serif-medium");
+                col.addView(prayerCols[i], gap(2));
+                cols.addView(col, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
+            }
+            c.addView(cols, gap(8));
+            setPrayer(PrayerTimes.cached(ctx, Prefs.city(ctx)));
+        }
+
+        if (Prefs.widget(ctx, INPUTS)) {
+            LinearLayout c = card(row1, 1.5f, 0, ROW1_H, 0xE6F4F5F8);
+            pressable(c, lastGlass, 0xE6F4F5F8, 0xFFFFFFFF, new Runnable() {
+                @Override
+                public void run() {
+                    if (listener != null) listener.onInputs();
+                }
+            });
+            LinearLayout top = new LinearLayout(getContext());
+            top.setOrientation(HORIZONTAL);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            IconView ic = new IconView(getContext(), IconView.INPUT, dp(1.8f));
+            ic.setColor(0xFF0B0C10);
+            top.addView(ic, new LayoutParams(dp(26), dp(26)));
+            c.addView(top, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+            TextView title = text("Inputs", 20, 0xFF0B0C10, "sans-serif-medium");
+            c.addView(title, gap(18));
+            inputsSub = text("HDMI / TV / AV", 12, 0x990B0C10, "sans-serif-medium");
+            c.addView(inputsSub, gap(4));
+            c.setContentDescription("Inputs");
+        }
+
+        LinearLayout row2 = newRow(false);
+
         if (Prefs.widget(ctx, WEATHER)) {
-            LinearLayout c = card(196);
+            LinearLayout c = card(row2, 1.25f, 0, ROW2_H, Glass.TINT_DARK);
             c.addView(caption("WEATHER"));
             LinearLayout row = new LinearLayout(getContext());
             row.setOrientation(HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             weatherIcon = new IconView(getContext(), IconView.CLOUD, dp(1.8f));
             weatherIcon.setColor(0xF2FFFFFF);
-            row.addView(weatherIcon, new LayoutParams(dp(32), dp(32)));
-            weatherTemp = text("--°", 28, 0xFFFFFFFF, "sans-serif-light");
+            row.addView(weatherIcon, new LayoutParams(dp(30), dp(30)));
+            weatherTemp = text("--°", 26, 0xFFFFFFFF, "sans-serif-light");
             LayoutParams tl = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
             tl.leftMargin = dp(10);
             row.addView(weatherTemp, tl);
-            c.addView(row, gap(8));
+            c.addView(row, gap(6));
             weatherDesc = text("Loading…", 13, 0xE6FFFFFF, "sans-serif-medium");
-            c.addView(weatherDesc, gap(6));
+            c.addView(weatherDesc, gap(5));
             weatherPlace = text(Weather.CITIES[Prefs.city(ctx)].name, 12, 0x99FFFFFF, "sans-serif");
-            c.addView(weatherPlace, gap(4));
+            c.addView(weatherPlace, gap(3));
             setWeather(Weather.cached(ctx), ctx);
         }
 
-        if (Prefs.widget(ctx, VERSE)) {
-            LinearLayout c = card(330);
-            c.addView(caption("VERSE OF THE DAY"));
-            verseText = text("", 14, 0xF2FFFFFF, "serif");
-            verseText.setSingleLine(false);
-            verseText.setMaxLines(3);
-            verseText.setLineSpacing(dp(2), 1f);
-            c.addView(verseText, gap(8));
-            verseRef = text("", 12, 0x99FFFFFF, "sans-serif-medium");
-            c.addView(verseRef, gap(6));
-        }
-
         if (Prefs.widget(ctx, STORAGE)) {
-            LinearLayout c = card(170);
+            LinearLayout c = card(row2, 1.0f, 0, ROW2_H, Glass.TINT_DARK);
             c.addView(caption("STORAGE"));
             storageMain = text("", 20, 0xFFFFFFFF, "sans-serif-light");
-            c.addView(storageMain, gap(10));
+            c.addView(storageMain, gap(8));
             GradientDrawable track = new GradientDrawable();
             track.setColor(0x33FFFFFF);
             track.setCornerRadius(dp(3));
@@ -142,14 +276,14 @@ final class WidgetBar extends LinearLayout {
             storageBar = new View(getContext());
             storageBar.setBackground(new LayerDrawable(new android.graphics.drawable.Drawable[] {track, clip}));
             LayoutParams bl = new LayoutParams(LayoutParams.MATCH_PARENT, dp(5));
-            bl.topMargin = dp(10);
+            bl.topMargin = dp(9);
             c.addView(storageBar, bl);
             storageSub = text("", 12, 0x99FFFFFF, "sans-serif");
-            c.addView(storageSub, gap(8));
+            c.addView(storageSub, gap(7));
         }
 
         if (Prefs.widget(ctx, NETWORK)) {
-            LinearLayout c = card(160);
+            LinearLayout c = card(row2, 1.0f, 0, ROW2_H, Glass.TINT_DARK);
             c.addView(caption("NETWORK"));
             LinearLayout row = new LinearLayout(getContext());
             row.setOrientation(HORIZONTAL);
@@ -161,21 +295,53 @@ final class WidgetBar extends LinearLayout {
             LayoutParams nl = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
             nl.leftMargin = dp(10);
             row.addView(netMain, nl);
-            c.addView(row, gap(12));
+            c.addView(row, gap(10));
             netSub = text("", 12, 0x99FFFFFF, "sans-serif");
-            c.addView(netSub, gap(10));
+            c.addView(netSub, gap(8));
         }
 
-        setVisibility(getChildCount() == 0 ? GONE : VISIBLE);
+        if (Prefs.widget(ctx, SLEEP)) {
+            LinearLayout c = card(row2, 1.0f, 0, ROW2_H, 0xF2F2553F);
+            pressable(c, lastGlass, 0xF2F2553F, 0xFFFF6A52, new Runnable() {
+                @Override
+                public void run() {
+                    if (listener != null) listener.onSleepTimer();
+                }
+            });
+            IconView moon = new IconView(getContext(), IconView.MOON, dp(1.8f));
+            moon.setColor(0xFFFFFFFF);
+            c.addView(moon, new LayoutParams(dp(26), dp(26)));
+            c.addView(text("Sleep timer", 16, 0xFFFFFFFF, "sans-serif-medium"), gap(10));
+            sleepSub = text("SET", 12, 0xE6FFFFFF, "sans-serif-medium");
+            sleepSub.setLetterSpacing(0.1f);
+            c.addView(sleepSub, gap(3));
+            c.setContentDescription("Sleep timer");
+        }
+
+        row1.setVisibility(row1.getChildCount() == 0 ? GONE : VISIBLE);
+        row2.setVisibility(row2.getChildCount() == 0 ? GONE : VISIBLE);
+        setVisibility(row1.getChildCount() + row2.getChildCount() == 0 ? GONE : VISIBLE);
         refresh(ctx);
     }
 
-    /** Cheap local refresh: verse, storage, network. */
+    /** Cheap local refresh: clock face, date, next prayer, inputs, sleep timer, storage, network. */
     void refresh(Context ctx) {
-        if (verseText != null) {
-            String[] v = Verses.today();
-            verseText.setText("“" + v[0] + "”");
-            verseRef.setText(v[1] + "  ·  KJV");
+        if (analog != null) analog.invalidate();
+        if (dateNum != null) {
+            Date d = new Date();
+            Locale loc = Locale.getDefault();
+            dateDay.setText(new SimpleDateFormat("EEEE", loc).format(d).toUpperCase(loc));
+            dateNum.setText(new SimpleDateFormat("d", loc).format(d));
+            dateMonth.setText(new SimpleDateFormat("MMM / yyyy", loc).format(d).toUpperCase(loc));
+        }
+        if (prayerTime != null) setPrayer(prayerData);
+        if (inputsSub != null) {
+            List<Inputs.Input> in = Inputs.list(ctx);
+            inputsSub.setText(in.isEmpty() ? "HDMI / TV / AV" : Inputs.summary(in));
+        }
+        if (sleepSub != null) {
+            int left = SleepTimer.remainingMinutes(ctx);
+            sleepSub.setText(left < 0 ? "SET" : left + " MIN LEFT");
         }
         if (storageMain != null) {
             try {
@@ -203,7 +369,7 @@ final class WidgetBar extends LinearLayout {
             } catch (Throwable ignored) {
             }
             netIcon.setType(online ? IconView.WIFI : IconView.WIFI_OFF);
-            netMain.setText(online ? "Online" : "Offline");
+            netMain.setText(online ? "Connected" : "Offline");
             String sub = "No connection";
             if (online && ethernet) {
                 sub = "Ethernet";
@@ -220,9 +386,36 @@ final class WidgetBar extends LinearLayout {
                 } catch (Throwable ignored) {
                 }
             } else if (online) {
-                sub = "Connected";
+                sub = "Online";
             }
             netSub.setText(sub);
+        }
+    }
+
+    /** Today's six prayer times as "HH:mm", or null while they're still loading. */
+    void setPrayer(String[] t) {
+        if (prayerTime == null) return;
+        prayerData = t;
+        if (t == null) {
+            prayerPill.setVisibility(INVISIBLE);
+            prayerTime.setText("--:--");
+            prayerSub.setText("Loading…");
+            for (TextView c : prayerCols) {
+                c.setText("--:--");
+                c.setTextColor(0xE6FFFFFF);
+            }
+            return;
+        }
+        Calendar now = Calendar.getInstance();
+        int next = PrayerTimes.next(t, now);
+        boolean tomorrow = PrayerTimes.isTomorrow(t, now);
+        prayerPill.setVisibility(VISIBLE);
+        prayerPill.setText("NEXT " + PrayerTimes.NAMES[next].toUpperCase(Locale.US));
+        prayerTime.setText(t[next]);
+        prayerSub.setText(tomorrow ? "Tomorrow" : "Today  ·  " + Weather.CITIES[Prefs.city(getContext())].name);
+        for (int i = 0; i < prayerCols.length; i++) {
+            prayerCols[i].setText(t[i]);
+            prayerCols[i].setTextColor(i == next && !tomorrow ? ACCENT : 0xE6FFFFFF);
         }
     }
 

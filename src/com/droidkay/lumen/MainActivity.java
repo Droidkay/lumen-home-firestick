@@ -76,7 +76,7 @@ public class MainActivity extends Activity {
 
     private List<AppRepo.App> apps = new ArrayList<AppRepo.App>();
     private boolean loaded, loading, reloadPending, dirty, destroyed, firstRender = true;
-    private boolean weatherLoading;
+    private boolean weatherLoading, prayerLoading;
     private int wallpaperGen;
     private String wantSec, wantPkg;
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -95,6 +95,7 @@ public class MainActivity extends Activity {
             if (widgets != null) widgets.refresh(MainActivity.this);
             if (pill != null) pill.refresh(MainActivity.this);
             maybeRefreshWeather(false);
+            maybeRefreshPrayer(false);
         }
     };
 
@@ -154,6 +155,7 @@ public class MainActivity extends Activity {
         updateClock();
         widgets.refresh(this);
         maybeRefreshWeather(false);
+        maybeRefreshPrayer(false);
         if (dirty && loaded) {
             dirty = false;
             render(wantSec, wantPkg);
@@ -335,7 +337,18 @@ public class MainActivity extends Activity {
         v.addView(greetTv, gl);
 
         widgets = new WidgetBar(this);
-        LinearLayout.LayoutParams wl = new LinearLayout.LayoutParams(WRAP, WRAP);
+        widgets.setListener(new WidgetBar.Listener() {
+            @Override
+            public void onInputs() {
+                showInputs();
+            }
+
+            @Override
+            public void onSleepTimer() {
+                showSleepTimer();
+            }
+        });
+        LinearLayout.LayoutParams wl = new LinearLayout.LayoutParams(MATCH, WRAP);
         wl.topMargin = dp(20);
         v.addView(widgets, wl);
         widgets.build(this);
@@ -453,9 +466,89 @@ public class MainActivity extends Activity {
         }, "lumen-weather").start();
     }
 
+    private void maybeRefreshPrayer(boolean force) {
+        if (!Prefs.widget(this, WidgetBar.PRAYER) || prayerLoading) return;
+        final int city = Prefs.city(this);
+        if (!force && PrayerTimes.cached(this, city) != null) return;
+        prayerLoading = true;
+        final Context app = getApplicationContext();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final String[] t = PrayerTimes.fetch(app, city);
+                ui.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        prayerLoading = false;
+                        if (destroyed) return;
+                        widgets.setPrayer(t != null ? t : PrayerTimes.cached(MainActivity.this, city));
+                    }
+                });
+            }
+        }, "lumen-prayer").start();
+    }
+
     private void rebuildWidgets() {
         widgets.build(this);
         maybeRefreshWeather(false);
+        maybeRefreshPrayer(false);
+    }
+
+    /** Inputs widget: lists the TV's HDMI/AV inputs and switches to the one you pick. */
+    private void showInputs() {
+        final List<Inputs.Input> list = Inputs.list(this);
+        ArrayList<Opt> opts = new ArrayList<Opt>();
+        for (final Inputs.Input in : list) {
+            opts.add(new Opt(in.label, new Runnable() {
+                @Override
+                public void run() {
+                    Prefs.setPauseUntil(MainActivity.this, System.currentTimeMillis() + PAUSE_MS);
+                    if (!Inputs.open(MainActivity.this, in)) {
+                        Prefs.setPauseUntil(MainActivity.this, 0L);
+                        toast("This device can't switch to " + in.label);
+                    }
+                }
+            }));
+        }
+        opts.add(new Opt(list.isEmpty() ? "OK" : "Cancel", null));
+        String msg = list.isEmpty()
+                ? "No HDMI inputs are available on this device.\n\nA Fire TV Stick is itself an HDMI source, "
+                + "so it has no inputs to switch. Change input with your TV's own remote (Input / Source button). "
+                + "On a Fire TV Edition television this lists the TV's HDMI ports."
+                : null;
+        showPanel(null, "Inputs", list.isEmpty() ? "HDMI / TV / AV" : "Switch the TV to…", msg, opts, 0, 520);
+    }
+
+    /** Sleep timer widget: pick how long until the TV goes to sleep. */
+    private void showSleepTimer() {
+        ArrayList<Opt> opts = new ArrayList<Opt>();
+        final int left = SleepTimer.remainingMinutes(this);
+        for (final int m : SleepTimer.MINUTES) {
+            opts.add(new Opt("Sleep in " + SleepTimer.label(m), new Runnable() {
+                @Override
+                public void run() {
+                    SleepTimer.set(MainActivity.this, m);
+                    widgets.refresh(MainActivity.this);
+                    toast("Sleep timer set for " + SleepTimer.label(m));
+                    if (!takeoverServiceEnabled()) {
+                        toast("Turn on the Home-button service in Customise so Lumen can sleep the TV");
+                    }
+                }
+            }));
+        }
+        if (left >= 0) {
+            opts.add(new Opt("Turn off timer", new Runnable() {
+                @Override
+                public void run() {
+                    SleepTimer.cancel(MainActivity.this);
+                    widgets.refresh(MainActivity.this);
+                    toast("Sleep timer off");
+                }
+            }));
+        }
+        opts.add(new Opt("Close", null));
+        showPanel(null, "Sleep timer", left >= 0 ? left + " min left" : "Puts the TV to sleep after a while",
+                null, opts, 1, 460);
     }
 
     // ---------------------------------------------------------------- wallpaper
@@ -1597,6 +1690,12 @@ public class MainActivity extends Activity {
                     showCustomise(0);
                 }
             }),
+            ccTile(IconView.INPUT, "Inputs", null, true, new Runnable() {
+                @Override
+                public void run() {
+                    showInputs();
+                }
+            }),
         };
         int cols = 4;
         LinearLayout rowL = null;
@@ -1876,7 +1975,7 @@ public class MainActivity extends Activity {
 
         opts.add(new Opt("Close", null));
 
-        showPanel(null, "Customise", "Lumen Home 1.3  ·  No ads  ·  No tracking", null, opts, focusIndex, 500);
+        showPanel(null, "Customise", "Lumen Home 1.4  ·  No ads  ·  No tracking", null, opts, focusIndex, 500);
     }
 
     private void showWallpapers(int focusIndex) {
@@ -2048,10 +2147,14 @@ public class MainActivity extends Activity {
     private void showWidgets(int focusIndex) {
         ArrayList<Opt> opts = new ArrayList<Opt>();
         String[][] items = {
+            {WidgetBar.CLOCK, "Analog clock"},
+            {WidgetBar.DATE, "Date"},
+            {WidgetBar.PRAYER, "Prayer times"},
+            {WidgetBar.INPUTS, "Inputs (HDMI)"},
             {WidgetBar.WEATHER, "Weather"},
-            {WidgetBar.VERSE, "Verse of the day"},
             {WidgetBar.STORAGE, "Storage"},
             {WidgetBar.NETWORK, "Network"},
+            {WidgetBar.SLEEP, "Sleep timer"},
         };
         for (int i = 0; i < items.length; i++) {
             final String key = items[i][0];
@@ -2092,7 +2195,8 @@ public class MainActivity extends Activity {
                     Prefs.setInt(MainActivity.this, "city", idx);
                     widgets.setWeather(Weather.cached(MainActivity.this), MainActivity.this);
                     maybeRefreshWeather(true);
-                    showWidgets(4);
+                    maybeRefreshPrayer(true);
+                    showWidgets(8);
                 }
             }));
         }

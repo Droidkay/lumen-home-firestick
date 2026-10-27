@@ -18,7 +18,7 @@ echo "== resources"
 "$AAPT2" compile --dir res -o build/res.zip
 "$AAPT2" link -o build/base.apk -I "$JAR_RES" --manifest AndroidManifest.xml \
   --java build/gen --min-sdk-version 22 --target-sdk-version 29 \
-  --version-code 6 --version-name 1.3 build/res.zip
+  --version-code 7 --version-name 1.4 build/res.zip
 
 echo "== java"
 javac -nowarn -Xlint:-options -source 8 -target 8 -encoding UTF-8 \
