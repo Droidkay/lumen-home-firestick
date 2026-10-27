@@ -19,16 +19,16 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
-import java.util.Calendar;
 import java.util.Date;
 import java.util.Locale;
 
 /**
- * The widgets in the top shelf. Row one: analog clock, date, prayer times.
- * Row two: weather, storage, network and the sleep timer. Each one can be switched off in Customise.
+ * The widgets in the top shelf. Row one: analog clock, date and weather.
+ * Row two: storage, network and the sleep timer. Each one can be switched off in Customise;
+ * the clock and date keep their size, so switching others off never stretches them.
  */
 final class WidgetBar extends LinearLayout {
-    static final String CLOCK = "clock", DATE = "date", PRAYER = "prayer",
+    static final String CLOCK = "clock", DATE = "date",
             WEATHER = "weather", STORAGE = "storage", NETWORK = "network", SLEEP = "sleep";
 
     /** The widget you can press OK on. */
@@ -45,9 +45,6 @@ final class WidgetBar extends LinearLayout {
 
     private AnalogClockView analog;
     private TextView dateDay, dateNum, dateMonth;
-    private TextView prayerPill, prayerTime, prayerSub;
-    private TextView[] prayerCols;
-    private String[] prayerData;
     private TextView sleepSub;
     private IconView weatherIcon, netIcon;
     private TextView weatherTemp, weatherDesc, weatherPlace;
@@ -146,8 +143,6 @@ final class WidgetBar extends LinearLayout {
         removeAllViews();
         analog = null;
         dateNum = null;
-        prayerTime = null;
-        prayerData = null;
         sleepSub = null;
         weatherIcon = null;
         storageMain = null;
@@ -163,7 +158,7 @@ final class WidgetBar extends LinearLayout {
         }
 
         if (Prefs.widget(ctx, DATE)) {
-            LinearLayout c = card(row1, 1.0f, 0, ROW1_H, Glass.TINT_DARK);
+            LinearLayout c = card(row1, 0, 170, ROW1_H, Glass.TINT_DARK);
             dateDay = caption("");
             dateDay.setTypeface(Typeface.create("monospace", Typeface.NORMAL));
             c.addView(dateDay);
@@ -174,57 +169,18 @@ final class WidgetBar extends LinearLayout {
             c.addView(dateMonth, gap(8));
         }
 
-        if (Prefs.widget(ctx, PRAYER)) {
-            LinearLayout c = card(row1, 3.2f, 0, ROW1_H, Glass.TINT_DARK);
-            LinearLayout head = new LinearLayout(getContext());
-            head.setOrientation(HORIZONTAL);
-            head.setGravity(Gravity.CENTER_VERTICAL);
-            LayoutParams cap = new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f);
-            head.addView(caption("PRAYER TIMES"), cap);
-            prayerPill = text("", 9, 0xFFFFFFFF, "sans-serif-medium");
-            prayerPill.setLetterSpacing(0.1f);
-            prayerPill.setPadding(dp(9), dp(4), dp(9), dp(4));
-            GradientDrawable pb = new GradientDrawable();
-            pb.setColor(ACCENT);
-            pb.setCornerRadius(dp(10));
-            prayerPill.setBackground(pb);
-            head.addView(prayerPill, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
-            c.addView(head, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
-
-            prayerTime = text("--:--", 34, 0xFFFFFFFF, "sans-serif-light");
-            c.addView(prayerTime, gap(6));
-            prayerSub = text("Loading…", 12, 0xB3FFFFFF, "sans-serif-medium");
-            c.addView(prayerSub, gap(3));
-
-            LinearLayout cols = new LinearLayout(getContext());
-            cols.setOrientation(HORIZONTAL);
-            prayerCols = new TextView[PrayerTimes.NAMES.length];
-            for (int i = 0; i < prayerCols.length; i++) {
-                LinearLayout col = new LinearLayout(getContext());
-                col.setOrientation(VERTICAL);
-                col.addView(text(PrayerTimes.NAMES[i], 9, 0x99FFFFFF, "sans-serif-medium"));
-                prayerCols[i] = text("--:--", 11, 0xE6FFFFFF, "sans-serif-medium");
-                col.addView(prayerCols[i], gap(2));
-                cols.addView(col, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
-            }
-            c.addView(cols, gap(8));
-            setPrayer(PrayerTimes.cached(ctx, Prefs.city(ctx)));
-        }
-
-        LinearLayout row2 = newRow(false);
-
         if (Prefs.widget(ctx, WEATHER)) {
-            LinearLayout c = card(row2, 1.25f, 0, ROW2_H, Glass.TINT_DARK);
+            LinearLayout c = card(row1, 1.0f, 0, ROW1_H, Glass.TINT_DARK);
             c.addView(caption("WEATHER"));
             LinearLayout row = new LinearLayout(getContext());
             row.setOrientation(HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             weatherIcon = new IconView(getContext(), IconView.CLOUD, dp(1.8f));
             weatherIcon.setColor(0xF2FFFFFF);
-            row.addView(weatherIcon, new LayoutParams(dp(30), dp(30)));
-            weatherTemp = text("--°", 26, 0xFFFFFFFF, "sans-serif-light");
+            row.addView(weatherIcon, new LayoutParams(dp(40), dp(40)));
+            weatherTemp = text("--°", 40, 0xFFFFFFFF, "sans-serif-light");
             LayoutParams tl = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
-            tl.leftMargin = dp(10);
+            tl.leftMargin = dp(12);
             row.addView(weatherTemp, tl);
             c.addView(row, gap(6));
             weatherDesc = text("Loading…", 13, 0xE6FFFFFF, "sans-serif-medium");
@@ -233,6 +189,8 @@ final class WidgetBar extends LinearLayout {
             c.addView(weatherPlace, gap(3));
             setWeather(Weather.cached(ctx), ctx);
         }
+
+        LinearLayout row2 = newRow(false);
 
         if (Prefs.widget(ctx, STORAGE)) {
             LinearLayout c = card(row2, 1.0f, 0, ROW2_H, Glass.TINT_DARK);
@@ -297,7 +255,7 @@ final class WidgetBar extends LinearLayout {
         refresh(ctx);
     }
 
-    /** Cheap local refresh: clock face, date, next prayer, sleep timer, storage, network. */
+    /** Cheap local refresh: clock face, date, sleep timer, storage, network. */
     void refresh(Context ctx) {
         if (analog != null) analog.invalidate();
         if (dateNum != null) {
@@ -307,7 +265,6 @@ final class WidgetBar extends LinearLayout {
             dateNum.setText(new SimpleDateFormat("d", loc).format(d));
             dateMonth.setText(new SimpleDateFormat("MMM / yyyy", loc).format(d).toUpperCase(loc));
         }
-        if (prayerTime != null) setPrayer(prayerData);
         if (sleepSub != null) {
             int left = SleepTimer.remainingMinutes(ctx);
             sleepSub.setText(left < 0 ? "SET" : left + " MIN LEFT");
@@ -358,33 +315,6 @@ final class WidgetBar extends LinearLayout {
                 sub = "Online";
             }
             netSub.setText(sub);
-        }
-    }
-
-    /** Today's six prayer times as "HH:mm", or null while they're still loading. */
-    void setPrayer(String[] t) {
-        if (prayerTime == null) return;
-        prayerData = t;
-        if (t == null) {
-            prayerPill.setVisibility(INVISIBLE);
-            prayerTime.setText("--:--");
-            prayerSub.setText("Loading…");
-            for (TextView c : prayerCols) {
-                c.setText("--:--");
-                c.setTextColor(0xE6FFFFFF);
-            }
-            return;
-        }
-        Calendar now = Calendar.getInstance();
-        int next = PrayerTimes.next(t, now);
-        boolean tomorrow = PrayerTimes.isTomorrow(t, now);
-        prayerPill.setVisibility(VISIBLE);
-        prayerPill.setText("NEXT " + PrayerTimes.NAMES[next].toUpperCase(Locale.US));
-        prayerTime.setText(t[next]);
-        prayerSub.setText(tomorrow ? "Tomorrow" : "Today  ·  " + Weather.CITIES[Prefs.city(getContext())].name);
-        for (int i = 0; i < prayerCols.length; i++) {
-            prayerCols[i].setText(t[i]);
-            prayerCols[i].setTextColor(i == next && !tomorrow ? ACCENT : 0xE6FFFFFF);
         }
     }
 

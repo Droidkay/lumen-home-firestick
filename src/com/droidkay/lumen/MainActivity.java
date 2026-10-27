@@ -76,7 +76,7 @@ public class MainActivity extends Activity {
 
     private List<AppRepo.App> apps = new ArrayList<AppRepo.App>();
     private boolean loaded, loading, reloadPending, dirty, destroyed, firstRender = true;
-    private boolean weatherLoading, prayerLoading;
+    private boolean weatherLoading;
     private int wallpaperGen;
     private String wantSec, wantPkg;
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -95,7 +95,6 @@ public class MainActivity extends Activity {
             if (widgets != null) widgets.refresh(MainActivity.this);
             if (pill != null) pill.refresh(MainActivity.this);
             maybeRefreshWeather(false);
-            maybeRefreshPrayer(false);
         }
     };
 
@@ -155,7 +154,6 @@ public class MainActivity extends Activity {
         updateClock();
         widgets.refresh(this);
         maybeRefreshWeather(false);
-        maybeRefreshPrayer(false);
         if (dirty && loaded) {
             dirty = false;
             render(wantSec, wantPkg);
@@ -461,32 +459,9 @@ public class MainActivity extends Activity {
         }, "lumen-weather").start();
     }
 
-    private void maybeRefreshPrayer(boolean force) {
-        if (!Prefs.widget(this, WidgetBar.PRAYER) || prayerLoading) return;
-        final int city = Prefs.city(this);
-        if (!force && PrayerTimes.cached(this, city) != null) return;
-        prayerLoading = true;
-        final Context app = getApplicationContext();
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                final String[] t = PrayerTimes.fetch(app, city);
-                ui.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        prayerLoading = false;
-                        if (destroyed) return;
-                        widgets.setPrayer(t != null ? t : PrayerTimes.cached(MainActivity.this, city));
-                    }
-                });
-            }
-        }, "lumen-prayer").start();
-    }
-
     private void rebuildWidgets() {
         widgets.build(this);
         maybeRefreshWeather(false);
-        maybeRefreshPrayer(false);
     }
 
     /** Sleep timer widget: pick how long until the TV goes to sleep. */
@@ -2113,7 +2088,6 @@ public class MainActivity extends Activity {
         String[][] items = {
             {WidgetBar.CLOCK, "Analog clock"},
             {WidgetBar.DATE, "Date"},
-            {WidgetBar.PRAYER, "Prayer times"},
             {WidgetBar.WEATHER, "Weather"},
             {WidgetBar.STORAGE, "Storage"},
             {WidgetBar.NETWORK, "Network"},
@@ -2158,8 +2132,7 @@ public class MainActivity extends Activity {
                     Prefs.setInt(MainActivity.this, "city", idx);
                     widgets.setWeather(Weather.cached(MainActivity.this), MainActivity.this);
                     maybeRefreshWeather(true);
-                    maybeRefreshPrayer(true);
-                    showWidgets(7);
+                    showWidgets(6);
                 }
             }));
         }
