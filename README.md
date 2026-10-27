@@ -6,6 +6,7 @@ An ad-free, Apple TV-style home screen for Amazon Fire TV (Fire OS devices).
 - Parallax tilt and light sweep on the selected app
 - Favourites dock, Recently used row and an All apps grid; pin, reorder, hide or uninstall from the remote
 - Wallpapers: four built-in scenes, colour gradients or your own picture, with an adjustable dark overlay
+- Screensaver, Apple TV style: your wallpaper and the built-in scenes drift and slowly zoom, cross-fading every 40 seconds, with a big clock, the date, weather and battery. Starts after 3 minutes on the home screen (Customise → Screensaver: off, 2–15 minutes, or Preview). Any button wakes it. To use it as Fire TV's system screensaver too (where Fire OS allows it): `adb shell settings put secure screensaver_components com.droidkay.lumen/.LumenDream`
 - Widgets: analog clock, date, weather (Open-Meteo, no key), power from your Felicity inverter (battery %, solar, NEPA on/off, with an alert when NEPA comes or goes), storage, network and a sleep timer; each can be switched off in Customise without stretching the others
 - Status pill (Minimal, Weather or Full) that opens Control Center
 - Folders: group apps, opened on frosted glass

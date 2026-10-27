@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.droidkay.lumen"
-    android:versionCode="9"
-    android:versionName="1.5">
+    android:versionCode="10"
+    android:versionName="1.6">
 
     <uses-sdk android:minSdkVersion="22" android:targetSdkVersion="29" />
 
@@ -56,6 +56,16 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/home_watcher" />
+        </service>
+            <service
+            android:name=".LumenDream"
+            android:exported="true"
+            android:label="Lumen Screensaver"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </service>
     </application>
 </manifest>

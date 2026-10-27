@@ -19,6 +19,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.format.DateFormat;
 import android.util.DisplayMetrics;
@@ -26,6 +27,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.WindowManager;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
@@ -59,6 +61,7 @@ public class MainActivity extends Activity {
     private float density;
     private int screenW, screenH;
     private BackgroundView bgView;
+    private FrameLayout rootView;
     private ScrollView scroll;
     private LinearLayout sections;
     private WidgetBar widgets;
@@ -155,6 +158,10 @@ public class MainActivity extends Activity {
         widgets.refresh(this);
         maybeRefreshWeather(false);
         startPower();
+        resumed = true;
+        lastInput = SystemClock.uptimeMillis();
+        ui.removeCallbacks(idleCheck);
+        ui.postDelayed(idleCheck, 15000);
         if (dirty && loaded) {
             dirty = false;
             render(wantSec, wantPkg);
@@ -164,6 +171,9 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         powerVisible = false;
+        resumed = false;
+        ui.removeCallbacks(idleCheck);
+        hideSaver();
         super.onPause();
     }
 
@@ -171,6 +181,8 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        lastInput = SystemClock.uptimeMillis();
+        if (saver != null) hideSaver();
         if (overlayShown) hidePanel(false);
         if (!dirty) goTop();
     }
@@ -191,6 +203,12 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
+        lastInput = SystemClock.uptimeMillis();
+        if (saver != null) {
+            // any button wakes it, and that press does nothing else
+            if (e.getAction() == KeyEvent.ACTION_UP) hideSaver();
+            return true;
+        }
         int k = e.getKeyCode();
         boolean up = e.getAction() == KeyEvent.ACTION_UP;
         if (e.getAction() == KeyEvent.ACTION_DOWN) {
@@ -236,6 +254,7 @@ public class MainActivity extends Activity {
 
     private void buildUi() {
         FrameLayout root = new FrameLayout(this);
+        rootView = root;
 
         bgView = new BackgroundView(this);
         root.addView(bgView, new FrameLayout.LayoutParams(MATCH, MATCH));
@@ -477,6 +496,92 @@ public class MainActivity extends Activity {
         startPower();
     }
 
+    // ---------------------------------------------------------------- screensaver (Apple TV style)
+
+    private Screensaver saver;
+    private volatile boolean resumed;
+    private long lastInput;
+    /** Stop keeping the TV awake after this long, so it can still go to sleep on its own. */
+    private static final long SAVER_AWAKE_MS = 60 * 60_000L;
+
+    private final Runnable idleCheck = new Runnable() {
+        @Override
+        public void run() {
+            if (!resumed || destroyed) return;
+            int mins = Prefs.getInt(MainActivity.this, "saverMin", Screensaver.DEFAULT_MINUTES);
+            if (saver == null && mins > 0 && SystemClock.uptimeMillis() - lastInput >= mins * 60_000L) showSaver();
+            ui.postDelayed(this, 15000);
+        }
+    };
+
+    private final Runnable saverSleep = new Runnable() {
+        @Override
+        public void run() {
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
+    };
+
+    private void showSaver() {
+        if (saver != null || rootView == null) return;
+        saver = new Screensaver(this);
+        saver.setAlpha(0f);
+        rootView.addView(saver, new FrameLayout.LayoutParams(MATCH, MATCH));
+        saver.start();
+        saver.animate().alpha(1f).setDuration(900).start();
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        ui.removeCallbacks(saverSleep);
+        ui.postDelayed(saverSleep, SAVER_AWAKE_MS);
+    }
+
+    private void hideSaver() {
+        final Screensaver s = saver;
+        if (s == null) return;
+        saver = null;
+        ui.removeCallbacks(saverSleep);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        s.animate().alpha(0f).setDuration(350).withEndAction(new Runnable() {
+            @Override
+            public void run() {
+                s.stop();
+                if (rootView != null) rootView.removeView(s);
+            }
+        }).start();
+        lastInput = SystemClock.uptimeMillis();
+    }
+
+    private void showSaverSettings(int focusIndex) {
+        ArrayList<Opt> opts = new ArrayList<Opt>();
+        final int cur = Prefs.getInt(this, "saverMin", Screensaver.DEFAULT_MINUTES);
+        for (int i = 0; i < Screensaver.MINUTES.length; i++) {
+            final int m = Screensaver.MINUTES[i];
+            final int idx = i;
+            opts.add(new Opt((m == 0 ? "Off" : "After " + m + " minutes") + (m == cur ? "   ✓" : ""), new Runnable() {
+                @Override
+                public void run() {
+                    Prefs.setInt(MainActivity.this, "saverMin", m);
+                    showSaverSettings(idx);
+                }
+            }));
+        }
+        opts.add(new Opt("Preview now", new Runnable() {
+            @Override
+            public void run() {
+                hidePanel(false);
+                showSaver();
+            }
+        }));
+        opts.add(new Opt("Back", new Runnable() {
+            @Override
+            public void run() {
+                showCustomise(7);
+            }
+        }));
+        showPanel(null, "Screensaver", "Drifting pictures with a big clock, like Apple TV",
+                "Shows when Lumen is on screen and the remote isn't used. Your own wallpaper is included. "
+                        + "Set Fire TV's own screensaver (Settings → Display & Sounds → Screensaver) to start later than this.",
+                opts, focusIndex, 520);
+    }
+
     // ---------------------------------------------------------------- power (Felicity inverter, like Lumen Power)
 
     private volatile boolean powerVisible, powerBusy;
@@ -541,6 +646,7 @@ public class MainActivity extends Activity {
                         if (destroyed) return;
                         if (fr != null) {
                             lastReading = fr;
+                            PowerCache.set(fr);
                             boolean grid = fr.gridOn();
                             if (lastGrid != null && lastGrid != grid) {
                                 toast(grid ? "NEPA is back ⚡" : "NEPA is gone. Running on " + (fr.solar() > 30 ? "solar and battery" : "battery"));
@@ -2000,6 +2106,14 @@ public class MainActivity extends Activity {
             }
         }));
 
+        final int saverMin = Prefs.getInt(this, "saverMin", Screensaver.DEFAULT_MINUTES);
+        opts.add(new Opt("Screensaver  ·  " + (saverMin == 0 ? "Off" : "After " + saverMin + " min"), new Runnable() {
+            @Override
+            public void run() {
+                showSaverSettings(0);
+            }
+        }));
+
         int hiddenCount = hiddenInstalled().size();
         opts.add(new Opt("Hidden apps  ·  " + hiddenCount, new Runnable() {
             @Override
@@ -2018,7 +2132,7 @@ public class MainActivity extends Activity {
                     showSetup();
                 } else {
                     Prefs.setTakeover(MainActivity.this, !on);
-                    showCustomise(8);
+                    showCustomise(9);
                 }
             }
         }));
@@ -2035,7 +2149,7 @@ public class MainActivity extends Activity {
 
         opts.add(new Opt("Close", null));
 
-        showPanel(null, "Customise", "Lumen Home 1.4  ·  No ads  ·  No tracking", null, opts, focusIndex, 500);
+        showPanel(null, "Customise", "Lumen Home 1.6  ·  No ads  ·  No tracking", null, opts, focusIndex, 500);
     }
 
     private void showWallpapers(int focusIndex) {
