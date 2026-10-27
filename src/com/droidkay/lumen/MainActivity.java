@@ -1802,86 +1802,191 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Control Center, tvOS style: a glass sheet in the top-right corner with the time, big Sleep and
+     * Sleep-timer buttons, then rounded tiles that turn white when selected (like Apple TV).
+     */
     private void showControlCenter() {
-        beginOverlay(0x5905060B);
+        beginOverlay(0x4005060B);
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(22), dp(20), dp(22), dp(18));
-        Glass.apply(panel, dp(32), density, Glass.TINT_PANEL);
+        panel.setPadding(dp(22), dp(22), dp(22), dp(18));
+        Glass.apply(panel, dp(36), density, Glass.TINT_PANEL);
         panel.setElevation(dp(24));
 
+        // header: time and date, with battery (or memory) on the right
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.HORIZONTAL);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        head.addView(text("Control Center", 20, 0xFFFFFFFF, "sans-serif-medium"), new LinearLayout.LayoutParams(0, WRAP, 1f));
-        head.addView(text(ramSummary(), 12, 0x99FFFFFF, "sans-serif"));
+        LinearLayout when = new LinearLayout(this);
+        when.setOrientation(LinearLayout.VERTICAL);
+        Date now = new Date();
+        Locale loc = Locale.getDefault();
+        int mode = Prefs.clockMode(this);
+        boolean h24 = mode == -1 ? DateFormat.is24HourFormat(this) : mode == 1;
+        when.addView(text(new SimpleDateFormat(h24 ? "HH:mm" : "h:mm a", loc).format(now), 34, 0xFFFFFFFF, "sans-serif-light"));
+        TextView dateL = text(new SimpleDateFormat("EEEE, d MMMM", loc).format(now), 13, 0xB3FFFFFF, "sans-serif-medium");
+        LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(WRAP, WRAP);
+        dl.topMargin = dp(4);
+        when.addView(dateL, dl);
+        head.addView(when, new LinearLayout.LayoutParams(0, WRAP, 1f));
+        String chip = PowerCache.line();
+        if (chip == null) chip = ramSummary();
+        if (chip != null && !chip.isEmpty()) {
+            TextView c = text(chip, 11, 0xE6FFFFFF, "sans-serif-medium");
+            c.setPadding(dp(12), dp(6), dp(12), dp(6));
+            c.setBackground(rounded(0x26FFFFFF, 14));
+            head.addView(c);
+        }
         panel.addView(head);
 
-        View[] tiles = {
-            ccTile(IconView.POWER, "Sleep", null, new Runnable() {
-                @Override
-                public void run() {
-                    if (!HomeWatcherService.sleep()) {
-                        toast("Hold the Home button on your remote, then choose Sleep");
-                    }
+        // big buttons
+        int left = SleepTimer.remainingMinutes(this);
+        View sleep = tvTile(IconView.POWER, "Sleep", "Turn off the TV", false, new Runnable() {
+            @Override
+            public void run() {
+                if (!HomeWatcherService.sleep()) {
+                    toast("Hold the Home button on your remote, then choose Sleep");
                 }
-            }),
-            ccTile(online() ? IconView.WIFI : IconView.WIFI_OFF, "Wi-Fi", online() ? "Connected" : "Offline", new Runnable() {
+            }
+        });
+        View timer = tvTile(IconView.MOON, "Sleep timer", left >= 0 ? left + " min left" : "Off", true, new Runnable() {
+            @Override
+            public void run() {
+                showSleepTimer();
+            }
+        });
+        panel.addView(tvRow(sleep, timer), tvRowLp(18));
+
+        View[] small = {
+            tvTile(online() ? IconView.WIFI : IconView.WIFI_OFF, "Wi-Fi", online() ? "Connected" : "Offline", false, new Runnable() {
                 @Override
                 public void run() {
                     openSystemPage(Settings.ACTION_WIFI_SETTINGS);
                 }
             }),
-            ccTile(IconView.BLUETOOTH, "Bluetooth", bluetoothOn() ? "On" : "Off", new Runnable() {
+            tvTile(IconView.BLUETOOTH, "Bluetooth", bluetoothOn() ? "On" : "Off", false, new Runnable() {
                 @Override
                 public void run() {
                     openSystemPage(Settings.ACTION_BLUETOOTH_SETTINGS);
                 }
             }),
-            ccTile(IconView.RECENT, "Recent Apps", null, true, new Runnable() {
+            tvTile(IconView.PARTLY, "Screensaver", "Show now", false, new Runnable() {
+                @Override
+                public void run() {
+                    showSaver();
+                }
+            }),
+            tvTile(IconView.RECENT, "Recent Apps", null, true, new Runnable() {
                 @Override
                 public void run() {
                     showSwitcher();
                 }
             }),
-            ccTile(IconView.SETTINGS, "Settings", null, new Runnable() {
-                @Override
-                public void run() {
-                    openSettings();
-                }
-            }),
-            ccTile(IconView.HOME, "Fire TV Home", null, new Runnable() {
-                @Override
-                public void run() {
-                    openAmazonHome();
-                }
-            }),
-            ccTile(IconView.SLIDERS, "Customise", null, true, new Runnable() {
+            tvTile(IconView.SLIDERS, "Customise", "Lumen", true, new Runnable() {
                 @Override
                 public void run() {
                     showCustomise(0);
                 }
             }),
+            tvTile(IconView.SETTINGS, "Settings", "Fire TV", false, new Runnable() {
+                @Override
+                public void run() {
+                    openSettings();
+                }
+            }),
         };
-        int cols = 4;
-        LinearLayout rowL = null;
-        for (int i = 0; i < tiles.length; i++) {
-            if (i % cols == 0) {
-                rowL = new LinearLayout(this);
-                rowL.setOrientation(LinearLayout.HORIZONTAL);
-                LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(MATCH, WRAP);
-                rl.topMargin = dp(14);
-                panel.addView(rowL, rl);
+        for (int i = 0; i < small.length; i += 2) {
+            panel.addView(tvRow(small[i], i + 1 < small.length ? small[i + 1] : null), tvRowLp(i == 0 ? 12 : 10));
+        }
+
+        TextView foot = text("Fire TV Home", 12, 0x80FFFFFF, "sans-serif-medium");
+        foot.setPadding(dp(10), dp(8), dp(10), dp(4));
+        foot.setFocusable(true);
+        foot.setBackground(pressable(0x00000000, 0x26FFFFFF, 12));
+        foot.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                hidePanel(true);
+                openAmazonHome();
             }
-            rowL.addView(tiles[i], new LinearLayout.LayoutParams(0, WRAP, 1f));
+        });
+        LinearLayout.LayoutParams fl = new LinearLayout.LayoutParams(WRAP, WRAP);
+        fl.topMargin = dp(10);
+        fl.gravity = Gravity.CENTER_HORIZONTAL;
+        panel.addView(foot, fl);
+
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(440), WRAP, Gravity.TOP | Gravity.END);
+        lp.topMargin = dp(22);
+        lp.rightMargin = dp(40);
+        endOverlay(panel, lp, sleep);
+    }
+
+    private LinearLayout tvRow(View a, View b) {
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setClipChildren(false);
+        r.addView(a, new LinearLayout.LayoutParams(0, dp(76), 1f));
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(0, dp(76), 1f);
+        bl.leftMargin = dp(10);
+        r.addView(b != null ? b : new View(this), bl);
+        return r;
+    }
+
+    private LinearLayout.LayoutParams tvRowLp(int top) {
+        LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(MATCH, WRAP);
+        l.topMargin = dp(top);
+        return l;
+    }
+
+    /** A tvOS Control Center tile: icon in a circle, title and status. Turns white when selected. */
+    private View tvTile(int icon, String title, String sub, final boolean keepOverlay, final Runnable action) {
+        final LinearLayout t = new LinearLayout(this);
+        t.setOrientation(LinearLayout.HORIZONTAL);
+        t.setGravity(Gravity.CENTER_VERTICAL);
+        t.setFocusable(true);
+        t.setClickable(true);
+        t.setPadding(dp(12), dp(10), dp(12), dp(10));
+        t.setBackground(rounded(0x24FFFFFF, 22));
+        final FrameLayout circle = new FrameLayout(this);
+        circle.setBackground(oval(0x26FFFFFF));
+        final IconView iv = new IconView(this, icon, dp(2f));
+        iv.setColor(0xFFFFFFFF);
+        circle.addView(iv, new FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER));
+        t.addView(circle, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        LinearLayout txt = new LinearLayout(this);
+        txt.setOrientation(LinearLayout.VERTICAL);
+        final TextView tt = text(title, 14, 0xF2FFFFFF, "sans-serif-medium");
+        txt.addView(tt);
+        final TextView st = sub == null ? null : text(sub, 11, 0x99FFFFFF, "sans-serif");
+        if (st != null) {
+            LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(WRAP, WRAP);
+            sl.topMargin = dp(3);
+            txt.addView(st, sl);
         }
-        for (int k = tiles.length % cols; k > 0 && k < cols; k++) {
-            rowL.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1f));
-        }
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(500), WRAP, Gravity.TOP | Gravity.END);
-        lp.topMargin = dp(24);
-        lp.rightMargin = dp(48);
-        endOverlay(panel, lp, tiles[3]);
+        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(0, WRAP, 1f);
+        tl.leftMargin = dp(10);
+        t.addView(txt, tl);
+        t.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View v, boolean f) {
+                t.setBackground(rounded(f ? 0xFFFFFFFF : 0x24FFFFFF, 22));
+                circle.setBackground(oval(f ? 0x1A000000 : 0x26FFFFFF));
+                iv.setColor(f ? 0xFF0B0C10 : 0xFFFFFFFF);
+                tt.setTextColor(f ? 0xFF0B0C10 : 0xF2FFFFFF);
+                if (st != null) st.setTextColor(f ? 0x990B0C10 : 0x99FFFFFF);
+                t.animate().scaleX(f ? 1.05f : 1f).scaleY(f ? 1.05f : 1f).setDuration(150).start();
+                t.setElevation(f ? dp(10) : 0);
+            }
+        });
+        t.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!keepOverlay) hidePanel(true);
+                action.run();
+            }
+        });
+        return t;
     }
 
     // ---------------------------------------------------------------- recent apps switcher
@@ -2149,7 +2254,7 @@ public class MainActivity extends Activity {
 
         opts.add(new Opt("Close", null));
 
-        showPanel(null, "Customise", "Lumen Home 1.6  ·  No ads  ·  No tracking", null, opts, focusIndex, 500);
+        showPanel(null, "Customise", "Lumen Home 1.7  ·  No ads  ·  No tracking", null, opts, focusIndex, 500);
     }
 
     private void showWallpapers(int focusIndex) {

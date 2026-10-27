@@ -10,7 +10,7 @@ An ad-free, Apple TV-style home screen for Amazon Fire TV (Fire OS devices).
 - Widgets: analog clock, date, weather (Open-Meteo, no key), power from your Felicity inverter (battery %, solar, NEPA on/off, with an alert when NEPA comes or goes), storage, network and a sleep timer; each can be switched off in Customise without stretching the others
 - Status pill (Minimal, Weather or Full) that opens Control Center
 - Folders: group apps, opened on frosted glass
-- Control Center: Sleep, Wi-Fi, Bluetooth, Recent Apps, Settings, Fire TV Home, Customise
+- Control Center, tvOS style: a glass sheet in the top-right corner with the time, big Sleep and Sleep timer buttons, then Wi-Fi, Bluetooth, Screensaver, Recent Apps, Customise and Fire TV Settings tiles that turn white when selected
 - Sleep timer: 15 min to 2 hours, uses the Home-button service to put the TV to sleep
 - Recent Apps switcher with a live RAM meter; press Up on a card to close that app
 - No ads, no tracking; everything stays on the device
